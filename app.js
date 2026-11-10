@@ -5,15 +5,25 @@
  */
 
 // State Management
+let defaultSavedTPs = [30, 50, 70, 100];
+try {
+  const rawTPs = localStorage.getItem('tp_targets');
+  if (rawTPs) {
+    const parsed = JSON.parse(rawTPs);
+    if (Array.isArray(parsed) && parsed.length > 0) defaultSavedTPs = parsed.map(Number);
+  }
+} catch (e) {}
+
 const state = {
   symbol: 'XAUUSD',
   timeframe: '1m',
   offset: parseFloat(localStorage.getItem('offset_XAUUSD') || '8.5'),
   sl_pips: parseFloat(localStorage.getItem('sl_pips') || '30'),
-  tp1_pips: parseFloat(localStorage.getItem('tp1_pips') || '30'),
-  tp2_pips: parseFloat(localStorage.getItem('tp2_pips') || '50'),
-  tp3_pips: parseFloat(localStorage.getItem('tp3_pips') || '70'),
-  tp4_pips: parseFloat(localStorage.getItem('tp4_pips') || '100'),
+  tp_targets: defaultSavedTPs,
+  tp1_pips: defaultSavedTPs[0] || 30,
+  tp2_pips: defaultSavedTPs[1] || 50,
+  tp3_pips: defaultSavedTPs[2] || 70,
+  tp4_pips: defaultSavedTPs[3] || 100,
   pz_lookback: 7,
   soundEnabled: true,
   chart: null,
@@ -360,15 +370,20 @@ function computeClientSideIndicators(candles) {
     const isUp = trend[i] === 1 && (trend[i - 1] === -1 || closes[i] > closes[i - 1]);
     const isDn = trend[i] === -1 && (trend[i - 1] === 1 || closes[i] < closes[i - 1]);
 
+    const tpList = (state.tp_targets && state.tp_targets.length > 0) ? state.tp_targets : [30, 50, 70, 100];
+
     if (isUp && closes[i] > candles[i].open && i - lastBuy >= 5) {
       lastBuy = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
       const slDist = state.sl_pips * pipUnit;
-      const tp1Dist = state.tp1_pips * pipUnit;
-      const tp2Dist = state.tp2_pips * pipUnit;
-      const tp3Dist = state.tp3_pips * pipUnit;
-      const tp4Dist = state.tp4_pips * pipUnit;
+
+      const tps = tpList.map((pips, idx) => ({
+        level: idx + 1,
+        pips: pips,
+        price: Math.round((entry + pips * pipUnit) * 100) / 100,
+        hit: false,
+      }));
 
       const trade = {
         id: `BUY_${candles[i].time}`,
@@ -376,27 +391,26 @@ function computeClientSideIndicators(candles) {
         bar_index: i,
         entry: Math.round(entry * 100) / 100,
         sl: Math.round((entry - slDist) * 100) / 100,
-        tp1: Math.round((entry + tp1Dist) * 100) / 100,
-        tp2: Math.round((entry + tp2Dist) * 100) / 100,
-        tp3: Math.round((entry + tp3Dist) * 100) / 100,
-        tp4: Math.round((entry + tp4Dist) * 100) / 100,
+        tps: tps,
         status: 'ACTIVE',
-        tp1_hit: false,
-        tp2_hit: false,
-        tp3_hit: false,
-        tp4_hit: false,
         sl_hit: false,
         is_closed: false,
       };
+      tps.forEach(t => {
+        trade[`tp${t.level}`] = t.price;
+        trade[`tp${t.level}_hit`] = false;
+      });
 
       // Evaluasi apakah trade sudah hit TP / SL oleh candle setelahnya
       for (let m = i + 1; m < n; m++) {
-        if (highs[m] >= trade.tp1) trade.tp1_hit = true;
-        if (highs[m] >= trade.tp2) trade.tp2_hit = true;
-        if (highs[m] >= trade.tp3) trade.tp3_hit = true;
-        if (highs[m] >= trade.tp4) {
-          trade.tp4_hit = true;
-          trade.status = 'TP4 HIT 🎯';
+        for (let t of trade.tps) {
+          if (highs[m] >= t.price) {
+            t.hit = true;
+            trade[`tp${t.level}_hit`] = true;
+          }
+        }
+        if (trade.tps.length > 0 && trade.tps[trade.tps.length - 1].hit) {
+          trade.status = `TP${trade.tps.length} HIT 🎯`;
           trade.is_closed = true;
           break;
         }
@@ -408,10 +422,12 @@ function computeClientSideIndicators(candles) {
         }
       }
       if (!trade.is_closed) {
-        if (trade.tp3_hit) trade.status = 'TP3 HIT ✓';
-        else if (trade.tp2_hit) trade.status = 'TP2 HIT ✓';
-        else if (trade.tp1_hit) trade.status = 'TP1 HIT ✓';
-        else trade.status = 'ACTIVE';
+        const hitTps = trade.tps.filter(t => t.hit);
+        if (hitTps.length > 0) {
+          trade.status = `TP${hitTps[hitTps.length - 1].level} HIT ✓`;
+        } else {
+          trade.status = 'ACTIVE';
+        }
       }
 
       buy_trades.push(trade);
@@ -423,10 +439,13 @@ function computeClientSideIndicators(candles) {
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
       const slDist = state.sl_pips * pipUnit;
-      const tp1Dist = state.tp1_pips * pipUnit;
-      const tp2Dist = state.tp2_pips * pipUnit;
-      const tp3Dist = state.tp3_pips * pipUnit;
-      const tp4Dist = state.tp4_pips * pipUnit;
+
+      const tps = tpList.map((pips, idx) => ({
+        level: idx + 1,
+        pips: pips,
+        price: Math.round((entry - pips * pipUnit) * 100) / 100,
+        hit: false,
+      }));
 
       const trade = {
         id: `SELL_${candles[i].time}`,
@@ -434,26 +453,25 @@ function computeClientSideIndicators(candles) {
         bar_index: i,
         entry: Math.round(entry * 100) / 100,
         sl: Math.round((entry + slDist) * 100) / 100,
-        tp1: Math.round((entry - tp1Dist) * 100) / 100,
-        tp2: Math.round((entry - tp2Dist) * 100) / 100,
-        tp3: Math.round((entry - tp3Dist) * 100) / 100,
-        tp4: Math.round((entry - tp4Dist) * 100) / 100,
+        tps: tps,
         status: 'ACTIVE',
-        tp1_hit: false,
-        tp2_hit: false,
-        tp3_hit: false,
-        tp4_hit: false,
         sl_hit: false,
         is_closed: false,
       };
+      tps.forEach(t => {
+        trade[`tp${t.level}`] = t.price;
+        trade[`tp${t.level}_hit`] = false;
+      });
 
       for (let m = i + 1; m < n; m++) {
-        if (lows[m] <= trade.tp1) trade.tp1_hit = true;
-        if (lows[m] <= trade.tp2) trade.tp2_hit = true;
-        if (lows[m] <= trade.tp3) trade.tp3_hit = true;
-        if (lows[m] <= trade.tp4) {
-          trade.tp4_hit = true;
-          trade.status = 'TP4 HIT 🎯';
+        for (let t of trade.tps) {
+          if (lows[m] <= t.price) {
+            t.hit = true;
+            trade[`tp${t.level}_hit`] = true;
+          }
+        }
+        if (trade.tps.length > 0 && trade.tps[trade.tps.length - 1].hit) {
+          trade.status = `TP${trade.tps.length} HIT 🎯`;
           trade.is_closed = true;
           break;
         }
@@ -465,10 +483,12 @@ function computeClientSideIndicators(candles) {
         }
       }
       if (!trade.is_closed) {
-        if (trade.tp3_hit) trade.status = 'TP3 HIT ✓';
-        else if (trade.tp2_hit) trade.status = 'TP2 HIT ✓';
-        else if (trade.tp1_hit) trade.status = 'TP1 HIT ✓';
-        else trade.status = 'ACTIVE';
+        const hitTps = trade.tps.filter(t => t.hit);
+        if (hitTps.length > 0) {
+          trade.status = `TP${hitTps[hitTps.length - 1].level} HIT ✓`;
+        } else {
+          trade.status = 'ACTIVE';
+        }
       }
 
       sell_trades.push(trade);
@@ -481,9 +501,9 @@ function computeClientSideIndicators(candles) {
 
   // Real Dynamic Performance Stats Calculation for selected timeframe
   const allTrades = [...buy_trades, ...sell_trades];
-  const allCompleted = allTrades.filter(t => t.is_closed || t.tp1_hit || t.sl_hit);
-  const tpHits = allCompleted.filter(t => t.tp1_hit || (t.status && t.status.includes('TP')));
-  const slHits = allCompleted.filter(t => (t.sl_hit || t.status === 'SL HIT') && !t.tp1_hit);
+  const allCompleted = allTrades.filter(t => t.is_closed || (t.tps && t.tps.some(x => x.hit)) || t.sl_hit);
+  const tpHits = allCompleted.filter(t => (t.tps && t.tps.some(x => x.hit)) || (t.status && t.status.includes('TP')));
+  const slHits = allCompleted.filter(t => (t.sl_hit || t.status === 'SL HIT') && !(t.tps && t.tps.some(x => x.hit)));
   const totalDecided = tpHits.length + slHits.length;
   const winRate = totalDecided > 0 ? Math.round((tpHits.length / totalDecided) * 1000) / 10 : 0;
 
@@ -513,7 +533,8 @@ async function loadMarketData() {
 
     if (isLocal) {
       try {
-        const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
+        const tpStr = (state.tp_targets || []).join(',');
+        const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
         const resp = await fetch(url);
         if (resp.ok) data = await resp.json();
       } catch (e) {
@@ -572,7 +593,8 @@ async function refreshSignalsSilently() {
   try {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
     if (isLocal) {
-      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
+      const tpStr = (state.tp_targets || []).join(',');
+      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
@@ -766,64 +788,119 @@ function renderTPSLLines() {
   // Posisi BUY (Hanya garis level yang belum hit yang ditampilkan)
   if (state.activeBuy) {
     const b = state.activeBuy;
-    const hasRemainingLevels = !b.tp1_hit || !b.tp2_hit || !b.tp3_hit || !b.tp4_hit || !b.sl_hit;
+    const tps = b.tps || [];
+    const anyTpRemaining = tps.length > 0 ? tps.some(t => !t.hit) : (!b.tp1_hit || !b.tp2_hit || !b.tp3_hit || !b.tp4_hit);
+    const hasRemainingLevels = anyTpRemaining || !b.sl_hit;
 
     if (hasRemainingLevels) {
       addLine(b.entry, 'BUY Entry', '#90caf9', LightweightCharts.LineStyle.Dotted, 1);
     }
     
-    // Jika SL belum kena, tampilkan garis SL (30p). Jika sudah hit -> otomatis dihilangkan!
     if (!b.sl_hit) {
       addLine(b.sl, `BUY SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP1 belum hit -> tampilkan garis TP1 (30p). Jika sudah hit -> otomatis dihilangkan!
-    if (!b.tp1_hit) {
-      addLine(b.tp1, `BUY TP1 (${state.tp1_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
-    }
-    // Jika TP2 belum hit -> tampilkan garis TP2 (50p). Jika sudah hit -> otomatis dihilangkan!
-    if (!b.tp2_hit) {
-      addLine(b.tp2, `BUY TP2 (${state.tp2_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
-    }
-    // Jika TP3 belum hit -> tampilkan garis TP3 (70p). Jika sudah hit -> otomatis dihilangkan!
-    if (!b.tp3_hit) {
-      addLine(b.tp3, `BUY TP3 (${state.tp3_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
-    }
-    // Jika TP4 belum hit -> tampilkan TP4 (100p). Jika sudah hit -> otomatis dihilangkan!
-    if (!b.tp4_hit) {
-      addLine(b.tp4, `BUY TP4 (${state.tp4_pips}p)`, '#00c853', LightweightCharts.LineStyle.Solid, 2);
+
+    if (tps.length > 0) {
+      tps.forEach((t, idx) => {
+        if (!t.hit) {
+          const isLast = idx === tps.length - 1;
+          addLine(
+            t.price,
+            `BUY TP${t.level} (${t.pips}p)`,
+            '#00c853',
+            isLast ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+            isLast ? 2 : 1
+          );
+        }
+      });
+    } else {
+      if (!b.tp1_hit && b.tp1) addLine(b.tp1, `BUY TP1 (${state.tp1_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
+      if (!b.tp2_hit && b.tp2) addLine(b.tp2, `BUY TP2 (${state.tp2_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
+      if (!b.tp3_hit && b.tp3) addLine(b.tp3, `BUY TP3 (${state.tp3_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
+      if (!b.tp4_hit && b.tp4) addLine(b.tp4, `BUY TP4 (${state.tp4_pips}p)`, '#00c853', LightweightCharts.LineStyle.Solid, 2);
     }
   }
 
   // Posisi SELL (Hanya garis level yang belum hit yang ditampilkan)
   if (state.activeSell) {
     const s = state.activeSell;
-    const hasRemainingLevels = !s.tp1_hit || !s.tp2_hit || !s.tp3_hit || !s.tp4_hit || !s.sl_hit;
+    const tps = s.tps || [];
+    const anyTpRemaining = tps.length > 0 ? tps.some(t => !t.hit) : (!s.tp1_hit || !s.tp2_hit || !s.tp3_hit || !s.tp4_hit);
+    const hasRemainingLevels = anyTpRemaining || !s.sl_hit;
 
     if (hasRemainingLevels) {
       addLine(s.entry, 'SELL Entry', '#ce93d8', LightweightCharts.LineStyle.Dotted, 1);
     }
     
-    // Jika SL belum kena, tampilkan garis SL (30p). Jika sudah hit -> otomatis dihilangkan!
     if (!s.sl_hit) {
       addLine(s.sl, `SELL SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP1 belum hit -> tampilkan garis TP1 (30p). Jika sudah hit -> otomatis dihilangkan!
-    if (!s.tp1_hit) {
-      addLine(s.tp1, `SELL TP1 (${state.tp1_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
-    }
-    // Jika TP2 belum hit -> tampilkan garis TP2 (50p). Jika sudah hit -> otomatis dihilangkan!
-    if (!s.tp2_hit) {
-      addLine(s.tp2, `SELL TP2 (${state.tp2_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
-    }
-    // Jika TP3 belum hit -> tampilkan garis TP3 (70p). Jika sudah hit -> otomatis dihilangkan!
-    if (!s.tp3_hit) {
-      addLine(s.tp3, `SELL TP3 (${state.tp3_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
-    }
-    // Jika TP4 belum hit -> tampilkan TP4 (100p). Jika sudah hit -> otomatis dihilangkan!
-    if (!s.tp4_hit) {
-      addLine(s.tp4, `SELL TP4 (${state.tp4_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Solid, 2);
+
+    if (tps.length > 0) {
+      tps.forEach((t, idx) => {
+        if (!t.hit) {
+          const isLast = idx === tps.length - 1;
+          addLine(
+            t.price,
+            `SELL TP${t.level} (${t.pips}p)`,
+            '#ff1744',
+            isLast ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+            isLast ? 2 : 1
+          );
+        }
+      });
+    } else {
+      if (!s.tp1_hit && s.tp1) addLine(s.tp1, `SELL TP1 (${state.tp1_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
+      if (!s.tp2_hit && s.tp2) addLine(s.tp2, `SELL TP2 (${state.tp2_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
+      if (!s.tp3_hit && s.tp3) addLine(s.tp3, `SELL TP3 (${state.tp3_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
+      if (!s.tp4_hit && s.tp4) addLine(s.tp4, `SELL TP4 (${state.tp4_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Solid, 2);
     }
   }
+}
+
+// Generate Dynamic Sidebar Target Grid HTML
+function renderTargetGridHTML(type, trade) {
+  const isBuy = type === 'BUY';
+  const prefix = isBuy ? 'buy' : 'sell';
+  let tps = [];
+  if (trade && trade.tps && trade.tps.length > 0) {
+    tps = trade.tps;
+  } else {
+    tps = (state.tp_targets || [30, 50, 70, 100]).map((p, idx) => {
+      let pr = null;
+      if (trade && trade.entry) {
+        const pipUnit = getPipUnit(state.symbol, trade.entry);
+        pr = isBuy ? trade.entry + p * pipUnit : trade.entry - p * pipUnit;
+      }
+      return {
+        level: idx + 1,
+        pips: p,
+        price: pr,
+        hit: trade ? !!trade[`tp${idx + 1}_hit`] : false,
+      };
+    });
+  }
+
+  let html = '';
+  tps.forEach(t => {
+    const valText = t.price != null ? t.price.toFixed(2) : '--';
+    html += `
+      <div class="target-item ${t.hit ? 'hit' : ''}" id="${prefix}-target-tp${t.level}">
+        <span>TP${t.level} (${t.pips}p):</span>
+        <span id="${prefix}-tp${t.level}-val">${valText}</span>
+      </div>
+    `;
+  });
+
+  const slValText = trade && trade.sl != null ? trade.sl.toFixed(2) : '--';
+  const slHit = trade ? !!trade.sl_hit : false;
+  html += `
+    <div class="target-item ${slHit ? 'hit' : ''}" id="${prefix}-target-sl" style="border-color: rgba(255, 61, 0, 0.4); grid-column: 1 / -1;">
+      <span style="color: var(--sl-red);">SL (${state.sl_pips} pips):</span>
+      <span id="${prefix}-sl-val" style="color: var(--sl-red);">${slValText}</span>
+    </div>
+  `;
+  return html;
 }
 
 // Update Sidebar Data
@@ -833,52 +910,31 @@ function updateSidebar(data) {
 
   if (state.activeBuy) {
     const b = state.activeBuy;
-    if (b.tp1_hit) b._counted_tp = true;
+    if (b.tp1_hit || (b.tps && b.tps.some(x => x.hit))) b._counted_tp = true;
     if (b.sl_hit) b._counted_sl = true;
-    document.getElementById('buy-entry-val').textContent = b.entry.toFixed(2);
-    document.getElementById('buy-tp1-val').textContent = b.tp1.toFixed(2);
-    document.getElementById('buy-tp2-val').textContent = b.tp2.toFixed(2);
-    document.getElementById('buy-tp3-val').textContent = b.tp3.toFixed(2);
-    const tp4El = document.getElementById('buy-tp4-val');
-    if (tp4El) tp4El.textContent = b.tp4 ? b.tp4.toFixed(2) : '--';
-    document.getElementById('buy-sl-val').textContent = b.sl.toFixed(2);
-
+    const entryEl = document.getElementById('buy-entry-val');
+    if (entryEl) entryEl.textContent = b.entry.toFixed(2);
     const bBadge = document.getElementById('buy-status-badge');
     if (bBadge) bBadge.textContent = b.status || 'ACTIVE';
-
-    const elTp1 = document.getElementById('buy-target-tp1');
-    const elTp2 = document.getElementById('buy-target-tp2');
-    const elTp3 = document.getElementById('buy-target-tp3');
-    const elTp4 = document.getElementById('buy-target-tp4');
-    if (elTp1) elTp1.classList.toggle('hit', !!b.tp1_hit);
-    if (elTp2) elTp2.classList.toggle('hit', !!b.tp2_hit);
-    if (elTp3) elTp3.classList.toggle('hit', !!b.tp3_hit);
-    if (elTp4) elTp4.classList.toggle('hit', !!b.tp4_hit);
   }
 
   if (state.activeSell) {
     const s = state.activeSell;
-    if (s.tp1_hit) s._counted_tp = true;
+    if (s.tp1_hit || (s.tps && s.tps.some(x => x.hit))) s._counted_tp = true;
     if (s.sl_hit) s._counted_sl = true;
-    document.getElementById('sell-entry-val').textContent = s.entry.toFixed(2);
-    document.getElementById('sell-tp1-val').textContent = s.tp1.toFixed(2);
-    document.getElementById('sell-tp2-val').textContent = s.tp2.toFixed(2);
-    document.getElementById('sell-tp3-val').textContent = s.tp3.toFixed(2);
-    const tp4El = document.getElementById('sell-tp4-val');
-    if (tp4El) tp4El.textContent = s.tp4 ? s.tp4.toFixed(2) : '--';
-    document.getElementById('sell-sl-val').textContent = s.sl.toFixed(2);
-
+    const entryEl = document.getElementById('sell-entry-val');
+    if (entryEl) entryEl.textContent = s.entry.toFixed(2);
     const sBadge = document.getElementById('sell-status-badge');
     if (sBadge) sBadge.textContent = s.status || 'ACTIVE';
+  }
 
-    const elTp1 = document.getElementById('sell-target-tp1');
-    const elTp2 = document.getElementById('sell-target-tp2');
-    const elTp3 = document.getElementById('sell-target-tp3');
-    const elTp4 = document.getElementById('sell-target-tp4');
-    if (elTp1) elTp1.classList.toggle('hit', !!s.tp1_hit);
-    if (elTp2) elTp2.classList.toggle('hit', !!s.tp2_hit);
-    if (elTp3) elTp3.classList.toggle('hit', !!s.tp3_hit);
-    if (elTp4) elTp4.classList.toggle('hit', !!s.tp4_hit);
+  const buyGrid = document.getElementById('buy-target-grid');
+  if (buyGrid) {
+    buyGrid.innerHTML = renderTargetGridHTML('BUY', state.activeBuy);
+  }
+  const sellGrid = document.getElementById('sell-target-grid');
+  if (sellGrid) {
+    sellGrid.innerHTML = renderTargetGridHTML('SELL', state.activeSell);
   }
 
   if (data.stats) {
@@ -937,38 +993,38 @@ function applyPriceTick(price) {
 function updateSidebarPrice(currentPrice) {
   // Real-time Target Hit Check: langsung hapus garis jika sudah hit TP / SL / Pending Limit
   let needsTPSLRedraw = false;
+
   if (state.activeBuy) {
-    if (currentPrice >= state.activeBuy.tp1 && !state.activeBuy.tp1_hit) {
-      state.activeBuy.tp1_hit = true;
-      needsTPSLRedraw = true;
-      if (state.stats && !state.activeBuy._counted_tp) {
-        state.activeBuy._counted_tp = true;
-        state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
-        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
-        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
-        renderStatsDisplay();
+    const b = state.activeBuy;
+    const tps = b.tps || [];
+    tps.forEach((t, idx) => {
+      if (currentPrice >= t.price && !t.hit) {
+        t.hit = true;
+        b[`tp${t.level}_hit`] = true;
+        needsTPSLRedraw = true;
+
+        if (t.level === 1 && state.stats && !b._counted_tp) {
+          b._counted_tp = true;
+          state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
+          const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+          state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+          renderStatsDisplay();
+        }
+
+        if (idx === tps.length - 1) {
+          b.is_closed = true;
+          b.status = `TP${t.level} HIT 🎯`;
+        }
       }
-    }
-    if (currentPrice >= state.activeBuy.tp2 && !state.activeBuy.tp2_hit) {
-      state.activeBuy.tp2_hit = true;
+    });
+
+    if (currentPrice <= b.sl && !b.sl_hit) {
+      b.sl_hit = true;
+      b.status = 'SL HIT';
+      b.is_closed = true;
       needsTPSLRedraw = true;
-    }
-    if (currentPrice >= state.activeBuy.tp3 && !state.activeBuy.tp3_hit) {
-      state.activeBuy.tp3_hit = true;
-      needsTPSLRedraw = true;
-    }
-    if (currentPrice >= state.activeBuy.tp4 && !state.activeBuy.tp4_hit) {
-      state.activeBuy.tp4_hit = true;
-      state.activeBuy.is_closed = true;
-      state.activeBuy.status = 'TP4 HIT 🎯';
-      needsTPSLRedraw = true;
-    }
-    if (currentPrice <= state.activeBuy.sl && !state.activeBuy.sl_hit) {
-      state.activeBuy.sl_hit = true;
-      state.activeBuy.status = 'SL HIT';
-      needsTPSLRedraw = true;
-      if (state.stats && !state.activeBuy._counted_sl && !state.activeBuy._counted_tp) {
-        state.activeBuy._counted_sl = true;
+      if (state.stats && !b._counted_sl && !b._counted_tp) {
+        b._counted_sl = true;
         state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
         const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
         state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
@@ -978,37 +1034,36 @@ function updateSidebarPrice(currentPrice) {
   }
 
   if (state.activeSell) {
-    if (currentPrice <= state.activeSell.tp1 && !state.activeSell.tp1_hit) {
-      state.activeSell.tp1_hit = true;
-      needsTPSLRedraw = true;
-      if (state.stats && !state.activeSell._counted_tp) {
-        state.activeSell._counted_tp = true;
-        state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
-        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
-        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
-        renderStatsDisplay();
+    const s = state.activeSell;
+    const tps = s.tps || [];
+    tps.forEach((t, idx) => {
+      if (currentPrice <= t.price && !t.hit) {
+        t.hit = true;
+        s[`tp${t.level}_hit`] = true;
+        needsTPSLRedraw = true;
+
+        if (t.level === 1 && state.stats && !s._counted_tp) {
+          s._counted_tp = true;
+          state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
+          const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+          state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+          renderStatsDisplay();
+        }
+
+        if (idx === tps.length - 1) {
+          s.is_closed = true;
+          s.status = `TP${t.level} HIT 🎯`;
+        }
       }
-    }
-    if (currentPrice <= state.activeSell.tp2 && !state.activeSell.tp2_hit) {
-      state.activeSell.tp2_hit = true;
+    });
+
+    if (currentPrice >= s.sl && !s.sl_hit) {
+      s.sl_hit = true;
+      s.status = 'SL HIT';
+      s.is_closed = true;
       needsTPSLRedraw = true;
-    }
-    if (currentPrice <= state.activeSell.tp3 && !state.activeSell.tp3_hit) {
-      state.activeSell.tp3_hit = true;
-      needsTPSLRedraw = true;
-    }
-    if (currentPrice <= state.activeSell.tp4 && !state.activeSell.tp4_hit) {
-      state.activeSell.tp4_hit = true;
-      state.activeSell.is_closed = true;
-      state.activeSell.status = 'TP4 HIT 🎯';
-      needsTPSLRedraw = true;
-    }
-    if (currentPrice >= state.activeSell.sl && !state.activeSell.sl_hit) {
-      state.activeSell.sl_hit = true;
-      state.activeSell.status = 'SL HIT';
-      needsTPSLRedraw = true;
-      if (state.stats && !state.activeSell._counted_sl && !state.activeSell._counted_tp) {
-        state.activeSell._counted_sl = true;
+      if (state.stats && !s._counted_sl && !s._counted_tp) {
+        s._counted_sl = true;
         state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
         const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
         state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
@@ -1022,26 +1077,22 @@ function updateSidebarPrice(currentPrice) {
     if (state.activeBuy) {
       const bBadge = document.getElementById('buy-status-badge');
       if (bBadge) bBadge.textContent = state.activeBuy.status || 'ACTIVE';
-      const elTp1 = document.getElementById('buy-target-tp1');
-      const elTp2 = document.getElementById('buy-target-tp2');
-      const elTp3 = document.getElementById('buy-target-tp3');
-      const elTp4 = document.getElementById('buy-target-tp4');
-      if (elTp1) elTp1.classList.toggle('hit', !!state.activeBuy.tp1_hit);
-      if (elTp2) elTp2.classList.toggle('hit', !!state.activeBuy.tp2_hit);
-      if (elTp3) elTp3.classList.toggle('hit', !!state.activeBuy.tp3_hit);
-      if (elTp4) elTp4.classList.toggle('hit', !!state.activeBuy.tp4_hit);
+      (state.activeBuy.tps || []).forEach(t => {
+        const el = document.getElementById(`buy-target-tp${t.level}`);
+        if (el) el.classList.toggle('hit', !!t.hit);
+      });
+      const slEl = document.getElementById('buy-target-sl');
+      if (slEl) slEl.classList.toggle('hit', !!state.activeBuy.sl_hit);
     }
     if (state.activeSell) {
       const sBadge = document.getElementById('sell-status-badge');
       if (sBadge) sBadge.textContent = state.activeSell.status || 'ACTIVE';
-      const elTp1 = document.getElementById('sell-target-tp1');
-      const elTp2 = document.getElementById('sell-target-tp2');
-      const elTp3 = document.getElementById('sell-target-tp3');
-      const elTp4 = document.getElementById('sell-target-tp4');
-      if (elTp1) elTp1.classList.toggle('hit', !!state.activeSell.tp1_hit);
-      if (elTp2) elTp2.classList.toggle('hit', !!state.activeSell.tp2_hit);
-      if (elTp3) elTp3.classList.toggle('hit', !!state.activeSell.tp3_hit);
-      if (elTp4) elTp4.classList.toggle('hit', !!state.activeSell.tp4_hit);
+      (state.activeSell.tps || []).forEach(t => {
+        const el = document.getElementById(`sell-target-tp${t.level}`);
+        if (el) el.classList.toggle('hit', !!t.hit);
+      });
+      const slEl = document.getElementById('sell-target-sl');
+      if (slEl) slEl.classList.toggle('hit', !!state.activeSell.sl_hit);
     }
   }
 
@@ -1360,34 +1411,105 @@ function setupEventListeners() {
     });
   });
 
-  // Settings Modal
+  // Settings Modal with Dynamic (+) and (-) TP Management
   const modalSettings = document.getElementById('modal-settings');
+  let modalTPList = [...state.tp_targets];
+
+  function renderModalTPInputs() {
+    const container = document.getElementById('tp-inputs-container');
+    const badge = document.getElementById('tp-count-badge');
+    if (!container) return;
+    if (badge) badge.textContent = `${modalTPList.length} Level`;
+
+    container.innerHTML = modalTPList.map((pips, idx) => `
+      <div class="tp-input-row" data-index="${idx}" style="display: flex; justify-content: space-between; align-items: center;">
+        <label style="color: var(--text-secondary); font-size: 13px;">TP${idx + 1} Target:</label>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <input type="number" class="inp-tp-val" data-index="${idx}" value="${pips}" min="5" max="2000" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px; font-family: var(--font-mono);">
+          <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.inp-tp-val').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        const val = parseFloat(e.target.value) || 0;
+        if (!isNaN(idx) && idx >= 0 && idx < modalTPList.length) {
+          modalTPList[idx] = val;
+        }
+      });
+    });
+  }
+
+  const btnAddTP = document.getElementById('btn-add-tp');
+  if (btnAddTP) {
+    btnAddTP.addEventListener('click', () => {
+      // Sync typed inputs first
+      const inputs = document.querySelectorAll('#tp-inputs-container .inp-tp-val');
+      inputs.forEach((inp, idx) => {
+        modalTPList[idx] = parseFloat(inp.value) || modalTPList[idx];
+      });
+
+      const lastVal = modalTPList.length > 0 ? modalTPList[modalTPList.length - 1] : 30;
+      const step = modalTPList.length >= 2 ? (modalTPList[modalTPList.length - 1] - modalTPList[modalTPList.length - 2]) : 20;
+      const newVal = Math.max(lastVal + (step > 0 ? step : 20), lastVal + 10);
+      modalTPList.push(newVal);
+      renderModalTPInputs();
+
+      const container = document.getElementById('tp-inputs-container');
+      if (container) container.scrollTop = container.scrollHeight;
+      showToast(`Ditambahkan TP${modalTPList.length} (${newVal} pips)`, '➕');
+    });
+  }
+
+  const btnRemoveTP = document.getElementById('btn-remove-tp');
+  if (btnRemoveTP) {
+    btnRemoveTP.addEventListener('click', () => {
+      if (modalTPList.length <= 1) {
+        showToast('Minimal harus ada 1 level TP!', '⚠️');
+        return;
+      }
+      const removedLevel = modalTPList.length;
+      modalTPList.pop();
+      renderModalTPInputs();
+      showToast(`TP${removedLevel} berhasil dibuang`, '➖');
+    });
+  }
+
   document.getElementById('btn-open-settings').addEventListener('click', () => {
     modalSettings.classList.add('active');
+    modalTPList = [...state.tp_targets];
+    renderModalTPInputs();
     const elSl = document.getElementById('inp-sl-pips');
-    const elTp1 = document.getElementById('inp-tp1-pips');
-    const elTp2 = document.getElementById('inp-tp2-pips');
-    const elTp3 = document.getElementById('inp-tp3-pips');
-    const elTp4 = document.getElementById('inp-tp4-pips');
     const elPz = document.getElementById('inp-pz-lookback');
     if (elSl) elSl.value = state.sl_pips;
-    if (elTp1) elTp1.value = state.tp1_pips;
-    if (elTp2) elTp2.value = state.tp2_pips;
-    if (elTp3) elTp3.value = state.tp3_pips;
-    if (elTp4) elTp4.value = state.tp4_pips;
     if (elPz) elPz.value = state.pz_lookback;
   });
+
   document.getElementById('btn-close-settings').addEventListener('click', () => {
     modalSettings.classList.remove('active');
   });
+
   document.getElementById('btn-save-settings').addEventListener('click', () => {
+    const inputs = document.querySelectorAll('#tp-inputs-container .inp-tp-val');
+    const collected = [];
+    inputs.forEach(inp => {
+      const v = parseFloat(inp.value);
+      if (!isNaN(v) && v > 0) collected.push(v);
+    });
+
+    if (collected.length === 0) collected.push(30);
+
+    state.tp_targets = collected;
+    state.tp1_pips = collected[0] || 30;
+    state.tp2_pips = collected[1] || 50;
+    state.tp3_pips = collected[2] || 70;
+    state.tp4_pips = collected[3] || 100;
     state.sl_pips = parseFloat(document.getElementById('inp-sl-pips').value) || 30;
-    state.tp1_pips = parseFloat(document.getElementById('inp-tp1-pips').value) || 30;
-    state.tp2_pips = parseFloat(document.getElementById('inp-tp2-pips').value) || 50;
-    state.tp3_pips = parseFloat(document.getElementById('inp-tp3-pips').value) || 70;
-    state.tp4_pips = parseFloat(document.getElementById('inp-tp4-pips').value) || 100;
     state.pz_lookback = parseInt(document.getElementById('inp-pz-lookback').value) || 7;
 
+    localStorage.setItem('tp_targets', JSON.stringify(state.tp_targets));
     localStorage.setItem('sl_pips', state.sl_pips);
     localStorage.setItem('tp1_pips', state.tp1_pips);
     localStorage.setItem('tp2_pips', state.tp2_pips);
@@ -1396,7 +1518,7 @@ function setupEventListeners() {
 
     modalSettings.classList.remove('active');
     loadMarketData();
-    showToast(`Parameter diperbarui: SL (${state.sl_pips}p), TP (${state.tp1_pips}, ${state.tp2_pips}, ${state.tp3_pips}, ${state.tp4_pips}p)`, '⚙️');
+    showToast(`Parameter disimpan: SL (${state.sl_pips}p), ${state.tp_targets.length} Level TP (${state.tp_targets.join(', ')}p)`, '⚙️');
   });
 
   // Logout Buttons

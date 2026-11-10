@@ -1506,3 +1506,24 @@ body {
   font-size: 11px;
 }
 
+/* TP Dynamic Target Controls */
+#btn-remove-tp:hover {
+  background: rgba(255, 68, 68, 0.3) !important;
+  transform: scale(1.08);
+}
+#btn-add-tp:hover {
+  background: rgba(0, 200, 83, 0.3) !important;
+  transform: scale(1.08);
+}
+#btn-remove-tp:active, #btn-add-tp:active {
+  transform: scale(0.95);
+}
+#tp-inputs-container::-webkit-scrollbar {
+  width: 5px;
+}
+#tp-inputs-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+

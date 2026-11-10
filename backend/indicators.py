@@ -90,8 +90,12 @@ class YUZARE_Engine:
         tp2_pips: float = 50.0, 
         tp3_pips: float = 70.0, 
         tp4_pips: float = 100.0,
+        tp_list: Optional[List[float]] = None,
         **kwargs
     ) -> Dict[str, Any]:
+        if tp_list is None or len(tp_list) == 0:
+            tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
+
         n = len(candles)
         if n < 25:
             return {
@@ -275,10 +279,15 @@ class YUZARE_Engine:
                 last_buy_bar = i
                 entry = c_curr["close"]
                 sl = entry - (sl_pips * pip_unit)
-                tp1 = entry + (tp1_pips * pip_unit)
-                tp2 = entry + (tp2_pips * pip_unit)
-                tp3 = entry + (tp3_pips * pip_unit)
-                tp4 = entry + (tp4_pips * pip_unit)
+                tps = []
+                for idx, p_val in enumerate(tp_list, start=1):
+                    tp_price = round(entry + (p_val * pip_unit), 2)
+                    tps.append({
+                        "level": idx,
+                        "pips": p_val,
+                        "price": tp_price,
+                        "hit": False
+                    })
 
                 trade = {
                     "id": f"BUY_{c_curr['time']}",
@@ -287,10 +296,7 @@ class YUZARE_Engine:
                     "bar_index": i,
                     "entry": round(entry, 2),
                     "sl": round(sl, 2),
-                    "tp1": round(tp1, 2),
-                    "tp2": round(tp2, 2),
-                    "tp3": round(tp3, 2),
-                    "tp4": round(tp4, 2),
+                    "tps": tps,
                     "sl_pips": sl_pips,
                     "risk": round(sl_pips * pip_unit, 2),
                     "status": "ACTIVE",
@@ -298,6 +304,10 @@ class YUZARE_Engine:
                     "exit_price": None,
                     "max_rr_reached": 0.0
                 }
+                for t in tps:
+                    trade[f"tp{t['level']}"] = t["price"]
+                    trade[f"tp{t['level']}_hit"] = False
+
                 buy_trades.append(trade)
                 signals.append({
                     "time": c_curr["time"],
@@ -315,10 +325,15 @@ class YUZARE_Engine:
                 last_sell_bar = i
                 entry = c_curr["close"]
                 sl = entry + (sl_pips * pip_unit)
-                tp1 = entry - (tp1_pips * pip_unit)
-                tp2 = entry - (tp2_pips * pip_unit)
-                tp3 = entry - (tp3_pips * pip_unit)
-                tp4 = entry - (tp4_pips * pip_unit)
+                tps = []
+                for idx, p_val in enumerate(tp_list, start=1):
+                    tp_price = round(entry - (p_val * pip_unit), 2)
+                    tps.append({
+                        "level": idx,
+                        "pips": p_val,
+                        "price": tp_price,
+                        "hit": False
+                    })
 
                 trade = {
                     "id": f"SELL_{c_curr['time']}",
@@ -327,10 +342,7 @@ class YUZARE_Engine:
                     "bar_index": i,
                     "entry": round(entry, 2),
                     "sl": round(sl, 2),
-                    "tp1": round(tp1, 2),
-                    "tp2": round(tp2, 2),
-                    "tp3": round(tp3, 2),
-                    "tp4": round(tp4, 2),
+                    "tps": tps,
                     "sl_pips": sl_pips,
                     "risk": round(sl_pips * pip_unit, 2),
                     "status": "ACTIVE",
@@ -338,6 +350,10 @@ class YUZARE_Engine:
                     "exit_price": None,
                     "max_rr_reached": 0.0
                 }
+                for t in tps:
+                    trade[f"tp{t['level']}"] = t["price"]
+                    trade[f"tp{t['level']}_hit"] = False
+
                 sell_trades.append(trade)
                 signals.append({
                     "time": c_curr["time"],
@@ -350,36 +366,32 @@ class YUZARE_Engine:
                     "details": trade
                 })
 
-        # 4. Multi-Level Trade Outcome Evaluation (TP1-4 & SL)
+        # 4. Multi-Level Trade Outcome Evaluation (Dynamic TPs & SL)
         for trade in buy_trades:
             start_idx = trade["bar_index"] + 1
-            trade["tp1_hit"] = False
-            trade["tp2_hit"] = False
-            trade["tp3_hit"] = False
-            trade["tp4_hit"] = False
             trade["sl_hit"] = False
             trade["is_closed"] = False
+            tps = trade.get("tps", [])
+            for item in tps:
+                item["hit"] = False
+                trade[f"tp{item['level']}_hit"] = False
 
             for k in range(start_idx, n):
                 h = candles[k]["high"]
                 l = candles[k]["low"]
 
                 # Target Hit Detection
-                if h >= trade["tp1"]:
-                    trade["tp1_hit"] = True
+                for item in tps:
+                    if h >= item["price"]:
+                        item["hit"] = True
+                        trade[f"tp{item['level']}_hit"] = True
 
-                if h >= trade["tp2"]:
-                    trade["tp2_hit"] = True
-
-                if h >= trade["tp3"]:
-                    trade["tp3_hit"] = True
-
-                if h >= trade["tp4"]:
-                    trade["tp4_hit"] = True
-                    trade["status"] = "TP4 HIT 🎯"
+                # If final TP hit -> close trade
+                if tps and tps[-1]["hit"]:
+                    trade["status"] = f"TP{len(tps)} HIT 🎯"
                     trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
-                    trade["exit_price"] = trade["tp4"]
+                    trade["exit_price"] = tps[-1]["price"]
                     break
 
                 # SL Hit
@@ -392,44 +404,36 @@ class YUZARE_Engine:
                     break
 
             if not trade["is_closed"]:
-                if trade["tp3_hit"]:
-                    trade["status"] = "TP3 HIT ✓"
-                elif trade["tp2_hit"]:
-                    trade["status"] = "TP2 HIT ✓"
-                elif trade["tp1_hit"]:
-                    trade["status"] = "TP1 HIT ✓"
+                hit_lvls = [item["level"] for item in tps if item["hit"]]
+                if hit_lvls:
+                    trade["status"] = f"TP{max(hit_lvls)} HIT ✓"
                 else:
                     trade["status"] = "ACTIVE"
                 active_buy_trades.append(trade)
 
         for trade in sell_trades:
             start_idx = trade["bar_index"] + 1
-            trade["tp1_hit"] = False
-            trade["tp2_hit"] = False
-            trade["tp3_hit"] = False
-            trade["tp4_hit"] = False
             trade["sl_hit"] = False
             trade["is_closed"] = False
+            tps = trade.get("tps", [])
+            for item in tps:
+                item["hit"] = False
+                trade[f"tp{item['level']}_hit"] = False
 
             for k in range(start_idx, n):
                 h = candles[k]["high"]
                 l = candles[k]["low"]
 
-                if l <= trade["tp1"]:
-                    trade["tp1_hit"] = True
+                for item in tps:
+                    if l <= item["price"]:
+                        item["hit"] = True
+                        trade[f"tp{item['level']}_hit"] = True
 
-                if l <= trade["tp2"]:
-                    trade["tp2_hit"] = True
-
-                if l <= trade["tp3"]:
-                    trade["tp3_hit"] = True
-
-                if l <= trade["tp4"]:
-                    trade["tp4_hit"] = True
-                    trade["status"] = "TP4 HIT 🎯"
+                if tps and tps[-1]["hit"]:
+                    trade["status"] = f"TP{len(tps)} HIT 🎯"
                     trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
-                    trade["exit_price"] = trade["tp4"]
+                    trade["exit_price"] = tps[-1]["price"]
                     break
 
                 if h >= trade["sl"]:
@@ -441,20 +445,17 @@ class YUZARE_Engine:
                     break
 
             if not trade["is_closed"]:
-                if trade["tp3_hit"]:
-                    trade["status"] = "TP3 HIT ✓"
-                elif trade["tp2_hit"]:
-                    trade["status"] = "TP2 HIT ✓"
-                elif trade["tp1_hit"]:
-                    trade["status"] = "TP1 HIT ✓"
+                hit_lvls = [item["level"] for item in tps if item["hit"]]
+                if hit_lvls:
+                    trade["status"] = f"TP{max(hit_lvls)} HIT ✓"
                 else:
                     trade["status"] = "ACTIVE"
                 active_sell_trades.append(trade)
 
         # Calculate Statistics dynamically for the selected timeframe
-        all_completed = [t for t in (buy_trades + sell_trades) if t["is_closed"] or t.get("tp1_hit") or t.get("sl_hit")]
-        tp_hits = [t for t in all_completed if t.get("tp1_hit") or "TP" in t.get("status", "")]
-        sl_hits = [t for t in all_completed if (t.get("sl_hit") or t.get("status") == "SL HIT") and not t.get("tp1_hit")]
+        all_completed = [t for t in (buy_trades + sell_trades) if t["is_closed"] or any(item.get("hit") for item in t.get("tps", [])) or t.get("sl_hit")]
+        tp_hits = [t for t in all_completed if any(item.get("hit") for item in t.get("tps", [])) or "TP" in t.get("status", "")]
+        sl_hits = [t for t in all_completed if (t.get("sl_hit") or t.get("status") == "SL HIT") and not any(item.get("hit") for item in t.get("tps", []))]
         total_signals = len(signals)
         total_decided = len(tp_hits) + len(sl_hits)
         win_rate = (len(tp_hits) / total_decided * 100.0) if total_decided > 0 else 0.0

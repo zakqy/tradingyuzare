@@ -109,6 +109,7 @@ def get_analysis(
     timeframe: str = Query("1m", description="Timeframe e.g. 1m, 5m, 1h, 1d"),
     limit: int = Query(250, ge=50, le=1000),
     sl_pips: float = Query(30.0, description="Stop Loss in pips"),
+    tp_targets: Optional[str] = Query(None, description="Comma-separated TP pips e.g. 30,50,70,100"),
     tp1_pips: float = Query(30.0, description="TP1 in pips"),
     tp2_pips: float = Query(50.0, description="TP2 in pips"),
     tp3_pips: float = Query(70.0, description="TP3 in pips"),
@@ -132,9 +133,18 @@ def get_analysis(
     if not candles:
         return JSONResponse(status_code=502, content={"error": "Failed to fetch market data"})
 
+    if tp_targets:
+        try:
+            tp_list = [float(x.strip()) for x in tp_targets.split(",") if x.strip()]
+        except Exception:
+            tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
+    else:
+        tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
+
     result = engine.analyze(
         candles, 
         sl_pips=sl_pips, 
+        tp_list=tp_list,
         tp1_pips=tp1_pips, 
         tp2_pips=tp2_pips, 
         tp3_pips=tp3_pips, 

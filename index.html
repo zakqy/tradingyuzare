@@ -179,7 +179,7 @@
             <span class="signal-value" id="buy-pnl-val" style="color: var(--buy-green);">+0.00 pts</span>
           </div>
           
-          <div class="target-grid">
+          <div class="target-grid" id="buy-target-grid">
             <div class="target-item" id="buy-target-tp1">
               <span>TP1 (30p):</span>
               <span id="buy-tp1-val">--</span>
@@ -223,7 +223,7 @@
             <span class="signal-value" id="sell-pnl-val" style="color: var(--sell-red);">+0.00 pts</span>
           </div>
           
-          <div class="target-grid">
+          <div class="target-grid" id="sell-target-grid">
             <div class="target-item" id="sell-target-tp1">
               <span>TP1 (30p):</span>
               <span id="sell-tp1-val">--</span>
@@ -340,35 +340,21 @@
               <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
             </div>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP1 Target:</label>
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <input type="number" id="inp-tp1-pips" value="30" min="5" max="500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
-              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+          <!-- Take Profit (TP) Section with Dynamic Add (+) / Remove (-) Buttons -->
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0 2px 0; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-weight: 600; color: #fff;">Target Take Profit (TP):</label>
+              <span id="tp-count-badge" style="background: rgba(0, 200, 83, 0.15); color: var(--buy-green); border: 1px solid rgba(0, 200, 83, 0.4); padding: 1px 7px; border-radius: 12px; font-size: 11px; font-family: var(--font-mono); font-weight: 600;">4 Level</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button type="button" id="btn-remove-tp" title="Kurangi Jumlah TP (-)" style="width: 30px; height: 30px; background: rgba(255, 68, 68, 0.15); border: 1px solid rgba(255, 68, 68, 0.4); color: #ff5252; border-radius: 6px; font-weight: 700; font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">−</button>
+              <button type="button" id="btn-add-tp" title="Tambah Jumlah TP (+)" style="width: 30px; height: 30px; background: rgba(0, 200, 83, 0.15); border: 1px solid rgba(0, 200, 83, 0.4); color: var(--buy-green); border-radius: 6px; font-weight: 700; font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">+</button>
             </div>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP2 Target:</label>
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <input type="number" id="inp-tp2-pips" value="50" min="5" max="500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
-              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
-            </div>
+          <div id="tp-inputs-container" style="display: flex; flex-direction: column; gap: 10px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
+            <!-- Rendered dynamically by JavaScript -->
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP3 Target:</label>
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <input type="number" id="inp-tp3-pips" value="70" min="5" max="500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
-              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
-            </div>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP4 Target:</label>
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <input type="number" id="inp-tp4-pips" value="100" min="5" max="1000" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
-              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
-            </div>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
             <label>Pending Zones Lookback:</label>
             <input type="number" id="inp-pz-lookback" value="7" min="3" max="20" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
           </div>
