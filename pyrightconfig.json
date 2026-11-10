@@ -1,0 +1,13 @@
+{
+  "include": [
+    "backend"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": [
+    ".venv/Lib/site-packages",
+    "C:/Users/Asus/AppData/Local/Programs/Python/Python314/Lib/site-packages",
+    "."
+  ]
+}
+

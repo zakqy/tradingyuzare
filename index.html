@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YUZARE Terminal · Real-Time XAUUSD & BTCUSD</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header class="header">
+    <div class="brand-section">
+      <div class="brand-badge">
+        <span>⚡ YUZARE</span>
+      </div>
+      <div class="indicator-title-tag">ZERO REPAINT</div>
+
+      <!-- Asset Selector -->
+      <div class="selector-group">
+        <select id="pair-selector" class="custom-select">
+          <option value="XAUUSD" selected>🟡 Gold Spot / USD (XAUUSD)</option>
+          <option value="BTCUSD">🟠 Bitcoin / Tether (BTCUSD)</option>
+          <option value="ETHUSD">🔷 Ethereum / Tether (ETHUSD)</option>
+          <option value="SOLUSD">🟣 Solana / Tether (SOLUSD)</option>
+          <option value="EURUSD">💶 Euro / US Dollar (EURUSD)</option>
+          <option value="GBPUSD">💷 British Pound / USD (GBPUSD)</option>
+        </select>
+      </div>
+
+      <!-- Timeframe Selector -->
+      <div class="timeframe-group" id="tf-buttons">
+        <button class="tf-btn active" data-tf="1m">1m</button>
+        <button class="tf-btn" data-tf="5m">5m</button>
+        <button class="tf-btn" data-tf="15m">15m</button>
+        <button class="tf-btn" data-tf="30m">30m</button>
+        <button class="tf-btn" data-tf="1h">1H</button>
+        <button class="tf-btn" data-tf="4h">4H</button>
+        <button class="tf-btn" data-tf="1d">1D</button>
+        <button class="tf-btn" data-tf="1w">1W</button>
+      </div>
+
+      <!-- MT5 Price Calibration Offset Control -->
+      <div class="offset-badge" id="mt5-offset-control" title="Kalibrasi Selisih Harga dengan Broker MT5 Anda">
+        <span style="color: var(--bull-cyan); font-weight: 700;">⚖️ MT5 Sync:</span>
+        <button id="btn-offset-minus" class="offset-btn" title="Kurangi offset">-</button>
+        <span id="offset-display" style="font-family: var(--font-mono); font-weight: 700; color: #fff; min-width: 44px; text-align: center;">+8.00</span>
+        <button id="btn-offset-plus" class="offset-btn" title="Tambah offset">+</button>
+      </div>
+    </div>
+
+    <!-- Middle OHLC Stats -->
+    <div class="ohlc-display">
+      <div class="ohlc-item">O <span id="val-open">--</span></div>
+      <div class="ohlc-item">H <span id="val-high">--</span></div>
+      <div class="ohlc-item">L <span id="val-low">--</span></div>
+      <div class="ohlc-item">C <span id="val-close">--</span></div>
+      <div class="ohlc-item" id="val-chg" style="color: var(--bull-cyan);">+0.00 (+0.00%)</div>
+      
+      <!-- Candle Countdown Timer -->
+      <div class="candle-countdown">
+        <span>⏳</span>
+        <span id="countdown-timer">00:29</span>
+      </div>
+    </div>
+
+    <!-- Header Right Buttons -->
+    <div class="header-actions">
+      <button class="action-btn" id="btn-sound-toggle">
+        <span id="sound-icon">🔊</span> <span id="sound-label">Audio ON</span>
+      </button>
+      <button class="action-btn" id="btn-open-settings">
+        ⚙️ Parameter
+      </button>
+      <button class="action-btn primary" id="btn-open-pine">
+        📋 Copy Pine Script
+      </button>
+    </div>
+  </header>
+
+  <!-- Execution & Indicator Ribbon (Mirip Screenshot) -->
+  <div class="order-ribbon">
+    <div class="quote-boxes">
+      <div class="quote-box sell" id="box-sell-quote">
+        <span id="quote-sell-price">4,812.96</span>
+        <span>SELL</span>
+      </div>
+      <div class="quote-spread" id="quote-spread-display">
+        SPREAD: <span id="spread-val">0.82</span>
+      </div>
+      <div class="quote-box buy" id="box-buy-quote">
+        <span id="quote-buy-price">4,813.78</span>
+        <span>BUY</span>
+      </div>
+    </div>
+
+    <div class="feature-pills">
+      <div class="pill-feature active">
+        <span>✓</span> 01 Pending Zone
+      </div>
+      <div class="pill-feature active">
+        <span>✓</span> 02 Dual Signal
+      </div>
+      <div class="pill-feature active">
+        <span>✓</span> 03 TP1-3 & SL Auto
+      </div>
+      <div class="pill-feature active">
+        <span>✓</span> 04 Zero Repaint (Bar Close)
+      </div>
+      <div class="pill-feature active">
+        <span>✓</span> 05 Multi-TF (1m - Weekly)
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Container: Chart & Dual Signal Sidebar -->
+  <div class="main-container">
+    <div class="chart-wrapper">
+      
+      <!-- Watermark Display inside Chart (Mirip Gambar TradingView) -->
+      <div class="chart-watermark">
+        <div class="watermark-title">
+          <span id="wm-symbol-name">Gold Spot / U.S. Dollar</span>
+          <span>·</span>
+          <span id="wm-timeframe">1</span>
+          <span>·</span>
+          <span id="wm-feed">OANDA / BINANCE LIVE</span>
+        </div>
+        <div class="watermark-sub">
+          <span>YUZARE</span>
+          <span style="color: var(--bull-cyan); margin-left: 6px;">[Green Bullish / Red Bearish]</span>
+        </div>
+      </div>
+
+      <!-- Canvas / Chart Element -->
+      <div id="chart-container"></div>
+
+      <!-- Overlaid Pending Zone Badges in Future Chart Area -->
+      <div id="pending-zones-overlay"></div>
+    </div>
+
+    <!-- Sidebar: Dual Signal & Trade Management -->
+    <aside class="sidebar">
+
+      <!-- Active BUY Card (Dual Signal Tracking) -->
+      <div class="sidebar-card">
+        <div class="card-header">
+          <div class="card-title">
+            <span style="color: var(--buy-green);">●</span> DUAL SIGNAL: BUY
+          </div>
+          <span class="status-badge" id="buy-status-badge">STANDBY</span>
+        </div>
+        
+        <div class="dual-signal-box buy-box" id="buy-signal-card">
+          <div class="signal-row">
+            <span class="signal-label">Entry Price:</span>
+            <span class="signal-value" id="buy-entry-val">--</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-label">Live Profit/PnL:</span>
+            <span class="signal-value" id="buy-pnl-val" style="color: var(--buy-green);">+0.00 pts</span>
+          </div>
+          
+          <div class="target-grid">
+            <div class="target-item" id="buy-target-tp1">
+              <span>TP1 (1.2R):</span>
+              <span id="buy-tp1-val">--</span>
+            </div>
+            <div class="target-item" id="buy-target-tp2">
+              <span>TP2 (2.2R):</span>
+              <span id="buy-tp2-val">--</span>
+            </div>
+            <div class="target-item" id="buy-target-tp3">
+              <span>TP3 (3.8R):</span>
+              <span id="buy-tp3-val">--</span>
+            </div>
+            <div class="target-item" id="buy-target-sl" style="border-color: rgba(255, 61, 0, 0.4);">
+              <span style="color: var(--sl-red);">SL:</span>
+              <span id="buy-sl-val">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active SELL Card (Dual Signal Tracking) -->
+      <div class="sidebar-card">
+        <div class="card-header">
+          <div class="card-title">
+            <span style="color: var(--sell-red);">●</span> DUAL SIGNAL: SELL
+          </div>
+          <span class="status-badge" id="sell-status-badge">STANDBY</span>
+        </div>
+        
+        <div class="dual-signal-box sell-box" id="sell-signal-card">
+          <div class="signal-row">
+            <span class="signal-label">Entry Price:</span>
+            <span class="signal-value" id="sell-entry-val">--</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-label">Live Profit/PnL:</span>
+            <span class="signal-value" id="sell-pnl-val" style="color: var(--sell-red);">+0.00 pts</span>
+          </div>
+          
+          <div class="target-grid">
+            <div class="target-item" id="sell-target-tp1">
+              <span>TP1 (1.2R):</span>
+              <span id="sell-tp1-val">--</span>
+            </div>
+            <div class="target-item" id="sell-target-tp2">
+              <span>TP2 (2.2R):</span>
+              <span id="sell-tp2-val">--</span>
+            </div>
+            <div class="target-item" id="sell-target-tp3">
+              <span>TP3 (3.8R):</span>
+              <span id="sell-tp3-val">--</span>
+            </div>
+            <div class="target-item" id="sell-target-sl" style="border-color: rgba(255, 61, 0, 0.4);">
+              <span style="color: var(--sl-red);">SL:</span>
+              <span id="sell-sl-val">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending Zones Monitor -->
+      <div class="sidebar-card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🎯</span> PENDING ZONES MONITOR
+          </div>
+          <span style="font-size: 11px; color: var(--bull-cyan);" id="pending-count-label">0 Level</span>
+        </div>
+        <div id="pending-zones-list" style="display: flex; flex-direction: column; gap: 6px; font-size: 11px;">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Performance & Win Rate Stats -->
+      <div class="sidebar-card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📊</span> STATISTIK & AKURASI
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-val" id="stat-winrate">--%</div>
+            <div class="stat-label">Win Rate</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="stat-signals" style="color: #69f0ae;">--</div>
+            <div class="stat-label">Total Signals</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="stat-tphits" style="color: var(--bull-cyan);">--</div>
+            <div class="stat-label">TP Hits</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="stat-slhits" style="color: #ff8a80;">--</div>
+            <div class="stat-label">SL Hits</div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- Bottom Terminal Status Bar -->
+  <footer class="footer">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span class="status-dot"></span>
+      <span id="ws-status-text">Binance High-Speed WebSocket: Connected (Live Stream)</span>
+    </div>
+    <div style="display: flex; gap: 16px;">
+      <span>Mode: <strong id="trading-mode-label" style="color: var(--bull-cyan);">1M SCALPING</strong></span>
+      <span>Engine: <strong>YUZARE v1.0</strong></span>
+      <span>Zero-Repaint: <strong style="color: #00c853;">LOCKED ON CLOSE</strong></span>
+    </div>
+  </footer>
+
+  <!-- Modal: Copy Pine Script v5 -->
+  <div class="modal-overlay" id="modal-pine">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">TradingView Pine Script (v5)YUZARE</div>
+        <button class="close-btn" id="btn-close-pine">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-secondary);">
+          Salin kode di bawah ini dan paste langsung ke <strong>Pine Editor</strong> di akun TradingView Anda untuk memasang indikator YUZARE yang sama persis:
+        </p>
+        <div class="code-area" id="pinescript-code-display">Memuat script...</div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="action-btn" id="btn-close-pine-bottom">Tutup</button>
+          <button class="action-btn primary" id="btn-copy-pine-clipboard">📋 Salin ke Clipboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Indicator Parameters -->
+  <div class="modal-overlay" id="modal-settings">
+    <div class="modal-content" style="width: 450px;">
+      <div class="modal-header">
+        <div class="modal-title">Pengaturan Indikator YUZARE</div>
+        <button class="close-btn" id="btn-close-settings">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>TP1 Risk/Reward Ratio:</label>
+            <input type="number" id="inp-rr-tp1" value="1.2" step="0.1" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>TP2 Risk/Reward Ratio:</label>
+            <input type="number" id="inp-rr-tp2" value="2.2" step="0.1" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>TP3 Risk/Reward Ratio:</label>
+            <input type="number" id="inp-rr-tp3" value="3.8" step="0.1" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Pending Zones Lookback:</label>
+            <input type="number" id="inp-pz-lookback" value="7" min="3" max="20" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+          <button class="action-btn primary" id="btn-save-settings">Simpan & Terapkan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast-notification">
+    <span id="toast-icon">🔔</span>
+    <span id="toast-message">Notifikasi</span>
+  </div>
+
+  <!-- Scripts -->
+  <script src="./lightweight-charts.standalone.production.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,225 @@
+//@version=5
+indicator("TRXC QRR - Quantum Range Reaction [Zero Repaint]", shorttitle="TRXC QRR", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+
+// ==========================================
+// 1. INPUT CONFIGURATION & PARAMETERS
+// ==========================================
+grp_qrr = "TRXC QRR Engine Settings"
+fast_len = input.int(9, "Fast EMA Length", group=grp_qrr)
+slow_len = input.int(21, "Slow EMA Length", group=grp_qrr)
+atr_len  = input.int(14, "ATR Volatility Length", group=grp_qrr)
+atr_mult = input.float(1.5, "ATR Multiplier for SL", step=0.1, group=grp_qrr)
+
+grp_pz = "01. Pending Zones Settings (Future Projection)"
+show_pending   = input.bool(true, "Show Pending Zones", group=grp_pz)
+pz_lookback    = input.int(7, "Pivot Lookback (Swing High/Low)", minval=3, maxval=20, group=grp_pz)
+pz_forward     = input.int(25, "Forward Projection Bars", minval=5, maxval=50, group=grp_pz)
+pz_max_zones   = input.int(4, "Max Zones per Side", minval=1, maxval=8, group=grp_pz)
+
+grp_ds = "02 & 03. Dual Signal & TP/SL Target Multipliers"
+show_buy_signals  = input.bool(true, "Enable BUY Signals", group=grp_ds)
+show_sell_signals = input.bool(true, "Enable SELL Signals", group=grp_ds)
+rr_tp1 = input.float(1.2, "TP1 Risk/Reward Ratio", step=0.1, group=grp_ds)
+rr_tp2 = input.float(2.2, "TP2 Risk/Reward Ratio", step=0.1, group=grp_ds)
+rr_tp3 = input.float(3.8, "TP3 Risk/Reward Ratio", step=0.1, group=grp_ds)
+show_tpsl_lines   = input.bool(true, "Draw TP1, TP2, TP3 & SL Lines", group=grp_ds)
+
+grp_theme = "Visual Theme (Green & Red)"
+color_bull = input.color(#00C853, "Bullish Candle (Green)", group=grp_theme)
+color_bear = input.color(#F23645, "Bearish Candle (Red)", group=grp_theme)
+color_buy_tag = input.color(#00C853, "BUY Badge Color", group=grp_theme)
+color_sell_tag = input.color(#D50000, "SELL Badge Color", group=grp_theme)
+
+// ==========================================
+// 2. ZERO REPAINT CALCULATION ENGINE
+// Evaluasi hanya dilakukan saat bar selesai (barstate.isconfirmed)
+// ==========================================
+atr_val = ta.atr(atr_len)
+ema_fast = ta.ema(close, fast_len)
+ema_slow = ta.ema(close, slow_len)
+rsi_val = ta.rsi(close, 14)
+
+// Candlestick coloring like TRXC screenshot
+barcolor(close >= open ? color_bull : color_bear)
+
+// Quantum Range Reaction (QRR) Logic
+bull_impulse = ta.crossover(ema_fast, ema_slow) or (close > close[1] + 0.4 * atr_val and ema_fast > ema_slow)
+bear_impulse = ta.crossunder(ema_fast, ema_slow) or (close < close[1] - 0.4 * atr_val and ema_fast < ema_slow)
+
+is_candle_bull = close > open and (close - open) > 0.3 * (high - low + 0.0001)
+is_candle_bear = close < open and (open - close) > 0.3 * (high - low + 0.0001)
+
+// Filter Zero Repaint: Gunakan barstate.isconfirmed
+confirmed_bar = barstate.isconfirmed
+
+buy_trigger  = confirmed_bar and bull_impulse and is_candle_bull and rsi_val >= 40 and rsi_val <= 70
+sell_trigger = confirmed_bar and bear_impulse and is_candle_bear and rsi_val >= 30 and rsi_val <= 60
+
+// Cegah sinyal berdekatan (minimal selang 3 bar)
+var int last_buy_bar = -999
+var int last_sell_bar = -999
+
+buy_signal = show_buy_signals and buy_trigger and (bar_index - last_buy_bar >= 3)
+sell_signal = show_sell_signals and sell_trigger and (bar_index - last_sell_bar >= 3)
+
+if buy_signal
+    last_buy_bar := bar_index
+
+if sell_signal
+    last_sell_bar := bar_index
+
+// ==========================================
+// 3. DUAL SIGNAL & TP/SL DRAWINGS
+// BUY dan SELL berjalan independen tanpa saling membatalkan
+// ==========================================
+var float active_buy_entry = na
+var float active_buy_sl = na
+var float active_buy_tp1 = na
+var float active_buy_tp2 = na
+var float active_buy_tp3 = na
+
+var float active_sell_entry = na
+var float active_sell_sl = na
+var float active_sell_tp1 = na
+var float active_sell_tp2 = na
+var float active_sell_tp3 = na
+
+// Buy Trigger Action
+if buy_signal
+    entry_p = close
+    risk = math.max(atr_val * atr_mult, entry_p - ta.lowest(low, 5))
+    active_buy_entry := entry_p
+    active_buy_sl    := entry_p - risk
+    active_buy_tp1   := entry_p + (risk * rr_tp1)
+    active_buy_tp2   := entry_p + (risk * rr_tp2)
+    active_buy_tp3   := entry_p + (risk * rr_tp3)
+    
+    // Label BUY di bawah candle (mirip screenshot)
+    label.new(
+         bar_index, low, text="buy",
+         xloc=xloc.bar_index, yloc=yloc.belowbar,
+         color=color_buy_tag, textcolor=color.white,
+         style=label.style_label_up, size=size.small
+     )
+    
+    // Gambar Garis TP/SL
+    if show_tpsl_lines
+        line.new(bar_index, active_buy_entry, bar_index + 15, active_buy_entry, color=color.gray, style=line.style_dotted, width=1)
+        line.new(bar_index, active_buy_sl,    bar_index + 15, active_buy_sl,    color=color.red,  style=line.style_dashed, width=1)
+        line.new(bar_index, active_buy_tp1,   bar_index + 15, active_buy_tp1,   color=#00E5FF,    style=line.style_dashed, width=1)
+        line.new(bar_index, active_buy_tp2,   bar_index + 15, active_buy_tp2,   color=#00E5FF,    style=line.style_dashed, width=1)
+        line.new(bar_index, active_buy_tp3,   bar_index + 15, active_buy_tp3,   color=#00E5FF,    style=line.style_dashed, width=2)
+        
+        label.new(bar_index + 15, active_buy_tp1, text="TP1: " + str.tostring(active_buy_tp1, "#.##"), color=color.new(#00E5FF, 20), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 15, active_buy_tp2, text="TP2: " + str.tostring(active_buy_tp2, "#.##"), color=color.new(#00E5FF, 20), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 15, active_buy_tp3, text="TP3: " + str.tostring(active_buy_tp3, "#.##"), color=color.new(#00E5FF, 0),  textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 15, active_buy_sl,  text="SL: "  + str.tostring(active_buy_sl, "#.##"),  color=color.new(color.red, 20), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+
+// Sell Trigger Action (Independen dari Buy!)
+if sell_signal
+    entry_p = close
+    risk = math.max(atr_val * atr_mult, ta.highest(high, 5) - entry_p)
+    active_sell_entry := entry_p
+    active_sell_sl    := entry_p + risk
+    active_sell_tp1   := entry_p - (risk * rr_tp1)
+    active_sell_tp2   := entry_p - (risk * rr_tp2)
+    active_sell_tp3   := entry_p - (risk * rr_tp3)
+    
+    // Label SELL di atas candle (mirip screenshot)
+    label.new(
+         bar_index, high, text="sell",
+         xloc=xloc.bar_index, yloc=yloc.abovebar,
+         color=color_sell_tag, textcolor=color.white,
+         style=label.style_label_down, size=size.small
+     )
+
+    // Gambar Garis TP/SL
+    if show_tpsl_lines
+        line.new(bar_index, active_sell_entry, bar_index + 15, active_sell_entry, color=color.gray, style=line.style_dotted, width=1)
+        line.new(bar_index, active_sell_sl,    bar_index + 15, active_sell_sl,    color=color.red,  style=line.style_dashed, width=1)
+        line.new(bar_index, active_sell_tp1,   bar_index + 15, active_sell_tp1,   color=#FF1744,    style=line.style_dashed, width=1)
+        line.new(bar_index, active_sell_tp2,   bar_index + 15, active_sell_tp2,   color=#FF1744,    style=line.style_dashed, width=1)
+        line.new(bar_index, active_sell_tp3,   bar_index + 15, active_sell_tp3,   color=#FF1744,    style=line.style_dashed, width=2)
+        
+        label.new(bar_index + 15, active_sell_tp1, text="TP1: " + str.tostring(active_sell_tp1, "#.##"), color=color.new(#FF1744, 20), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 15, active_sell_tp2, text="TP2: " + str.tostring(active_sell_tp2, "#.##"), color=color.new(#FF1744, 20), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 15, active_sell_tp3, text="TP3: " + str.tostring(active_sell_tp3, "#.##"), color=color.new(#FF1744, 0),  textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 15, active_sell_sl,  text="SL: "  + str.tostring(active_sell_sl, "#.##"),  color=color.new(color.red, 20), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+
+// ==========================================
+// 4. PENDING ZONES (PROJECTED INTO FUTURE AREA)
+// Sesuai gambar: "pending buy" & "pending sell" di masa depan sebelah kanan chart
+// ==========================================
+var label[] pz_labels = array.new_label()
+var box[] pz_boxes = array.new_box()
+
+// Bersihkan objek lama agar hemat memori & chart tetap bersih
+if barstate.islast and show_pending
+    if array.size(pz_labels) > 0
+        for idx = 0 to array.size(pz_labels) - 1
+            label.delete(array.get(pz_labels, idx))
+        array.clear(pz_labels)
+    if array.size(pz_boxes) > 0
+        for idx = 0 to array.size(pz_boxes) - 1
+            box.delete(array.get(pz_boxes, idx))
+        array.clear(pz_boxes)
+
+    // Cari pivot high (pending sell) dan pivot low (pending buy) terakhir
+    int found_sells = 0
+    int found_buys = 0
+
+    for i = 1 to 120
+        if found_sells >= pz_max_zones and found_buys >= pz_max_zones
+            break
+            
+        ph = ta.pivothigh(high, pz_lookback, pz_lookback)[i]
+        pl = ta.pivotlow(low, pz_lookback, pz_lookback)[i]
+
+        // Pending Sell Zone (di atas harga sekarang)
+        if not na(ph) and ph > close and found_sells < pz_max_zones
+            found_sells += 1
+            bx = box.new(
+                 left=bar_index + 2 + (found_sells * 4), top=ph + 0.15 * atr_val,
+                 right=bar_index + pz_forward, bottom=ph,
+                 border_color=color.new(#D50000, 40),
+                 bgcolor=color.new(#D50000, 85),
+                 border_style=line.style_dotted
+             )
+            array.push(pz_boxes, bx)
+
+            lbl = label.new(
+                 x=bar_index + 10 + (found_sells * 3), y=ph,
+                 text="pending sell",
+                 xloc=xloc.bar_index, yloc=yloc.price,
+                 color=color.new(#501015, 20), textcolor=color.new(#FF8A80, 0),
+                 style=label.style_label_center, size=size.small
+             )
+            array.push(pz_labels, lbl)
+
+        // Pending Buy Zone (di bawah harga sekarang)
+        if not na(pl) and pl < close and found_buys < pz_max_zones
+            found_buys += 1
+            bx = box.new(
+                 left=bar_index + 2 + (found_buys * 4), top=pl,
+                 right=bar_index + pz_forward, bottom=pl - 0.15 * atr_val,
+                 border_color=color.new(#00C853, 40),
+                 bgcolor=color.new(#00C853, 85),
+                 border_style=line.style_dotted
+             )
+            array.push(pz_boxes, bx)
+
+            lbl = label.new(
+                 x=bar_index + 10 + (found_buys * 3), y=pl,
+                 text="pending buy",
+                 xloc=xloc.bar_index, yloc=yloc.price,
+                 color=color.new(#0B3C18, 20), textcolor=color.new(#B9F6CA, 0),
+                 style=label.style_label_center, size=size.small
+             )
+            array.push(pz_labels, lbl)
+
+// ==========================================
+// 5. TRADINGVIEW ALERTS INTEGRATION
+// ==========================================
+alertcondition(buy_signal, title="TRXC QRR - BUY Signal", message="🟢 TRXC BUY Signal confirmed on {{ticker}} at {{close}}! TP1: {{plot_0}}")
+alertcondition(sell_signal, title="TRXC QRR - SELL Signal", message="🔴 TRXC SELL Signal confirmed on {{ticker}} at {{close}}! TP1: {{plot_0}}")
+

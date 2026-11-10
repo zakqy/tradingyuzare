@@ -1,0 +1,13 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/.venv/Lib/site-packages",
+    "C:/Users/Asus/AppData/Local/Programs/Python/Python314/Lib/site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/.venv/Lib/site-packages",
+    "C:/Users/Asus/AppData/Local/Programs/Python/Python314/Lib/site-packages"
+  ]
+}
