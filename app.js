@@ -4,27 +4,63 @@
  * Supports both Local FastAPI Server AND Standalone GitHub Pages Serverless Mode!
  */
 
-// State Management
-let defaultSavedTPs = [30, 50, 70, 100];
-try {
-  const rawTPs = localStorage.getItem('tp_targets');
-  if (rawTPs) {
-    const parsed = JSON.parse(rawTPs);
-    if (Array.isArray(parsed) && parsed.length > 0) defaultSavedTPs = parsed.map(Number);
-  }
-} catch (e) {}
+// State Management & Per-Timeframe Settings
+const DEFAULT_TF_SETTINGS = {
+  '1m': { sl_pips: 30, tp_targets: [30, 50] },
+  '5m': { sl_pips: 30, tp_targets: [30, 50, 70] },
+  '15m': { sl_pips: 35, tp_targets: [35, 60, 90, 120] },
+  '30m': { sl_pips: 40, tp_targets: [40, 70, 100, 140] },
+  '1h': { sl_pips: 50, tp_targets: [50, 90, 140, 200] },
+  '4h': { sl_pips: 80, tp_targets: [80, 150, 220, 300] },
+  '1d': { sl_pips: 120, tp_targets: [120, 200, 300, 450] },
+  '1w': { sl_pips: 250, tp_targets: [250, 400, 600, 800] },
+};
+
+function getStoredTFSettings() {
+  const settings = JSON.parse(JSON.stringify(DEFAULT_TF_SETTINGS));
+  try {
+    const raw = localStorage.getItem('yuzare_tf_settings');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      for (const k in parsed) {
+        if (parsed[k] && Array.isArray(parsed[k].tp_targets) && parsed[k].tp_targets.length > 0) {
+          settings[k] = parsed[k];
+        }
+      }
+    } else {
+      // Migrate legacy single tp_targets if available
+      const legacyTP = localStorage.getItem('tp_targets');
+      const legacySL = localStorage.getItem('sl_pips');
+      if (legacyTP) {
+        const parsedTP = JSON.parse(legacyTP);
+        if (Array.isArray(parsedTP) && parsedTP.length > 0) {
+          settings['1m'] = {
+            sl_pips: parseFloat(legacySL) || 30,
+            tp_targets: parsedTP.map(Number),
+          };
+        }
+      }
+    }
+  } catch (e) {}
+  return settings;
+}
+
+const initialTFSettings = getStoredTFSettings();
+const initialTF = '1m';
+const activeTFConf = initialTFSettings[initialTF] || { sl_pips: 30, tp_targets: [30, 50] };
 
 const state = {
   symbol: 'XAUUSD',
-  timeframe: '1m',
+  timeframe: initialTF,
+  tf_settings: initialTFSettings,
   offset: parseFloat(localStorage.getItem('offset_XAUUSD') || '8.5'),
-  sl_pips: parseFloat(localStorage.getItem('sl_pips') || '30'),
-  tp_targets: defaultSavedTPs,
-  tp1_pips: defaultSavedTPs[0] || 30,
-  tp2_pips: defaultSavedTPs[1] || 50,
-  tp3_pips: defaultSavedTPs[2] || 70,
-  tp4_pips: defaultSavedTPs[3] || 100,
-  pz_lookback: 7,
+  sl_pips: activeTFConf.sl_pips || 30,
+  tp_targets: [...activeTFConf.tp_targets],
+  tp1_pips: activeTFConf.tp_targets[0] || 30,
+  tp2_pips: activeTFConf.tp_targets[1] || 50,
+  tp3_pips: activeTFConf.tp_targets[2] || 70,
+  tp4_pips: activeTFConf.tp_targets[3] || 100,
+  pz_lookback: parseInt(localStorage.getItem('pz_lookback') || '7'),
   soundEnabled: true,
   chart: null,
   candleSeries: null,
@@ -43,6 +79,23 @@ const state = {
   lastCandle: null,
   lastPrice: 0,
 };
+
+function applyTimeframeSettings(tf) {
+  if (!state.tf_settings[tf]) {
+    state.tf_settings[tf] = DEFAULT_TF_SETTINGS[tf] 
+      ? JSON.parse(JSON.stringify(DEFAULT_TF_SETTINGS[tf]))
+      : { sl_pips: 30, tp_targets: [30, 50] };
+  }
+  const conf = state.tf_settings[tf];
+  state.sl_pips = conf.sl_pips || 30;
+  state.tp_targets = (Array.isArray(conf.tp_targets) && conf.tp_targets.length > 0)
+    ? [...conf.tp_targets]
+    : [30, 50];
+  state.tp1_pips = state.tp_targets[0] || 30;
+  state.tp2_pips = state.tp_targets[1] || 50;
+  state.tp3_pips = state.tp_targets[2] || 70;
+  state.tp4_pips = state.tp_targets[3] || 100;
+}
 
 const PAIR_MAP = {
   XAUUSD: 'PAXGUSDT',
@@ -1362,6 +1415,7 @@ function setupEventListeners() {
       tfBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.timeframe = btn.dataset.tf;
+      applyTimeframeSettings(state.timeframe);
       document.getElementById('wm-timeframe').textContent = state.timeframe;
 
       const isScalp = ['1m', '5m'].includes(state.timeframe);
@@ -1411,79 +1465,138 @@ function setupEventListeners() {
     });
   });
 
-  // Settings Modal with Dynamic (+) and (-) TP Management
+  // Settings Modal with Per-Timeframe (+) and (-) TP Management
   const modalSettings = document.getElementById('modal-settings');
-  let modalTPList = [...state.tp_targets];
+  let workingTFSettings = JSON.parse(JSON.stringify(state.tf_settings));
+  let activeModalTF = state.timeframe;
 
-  function renderModalTPInputs() {
+  function syncModalInputsToWorking(tf) {
+    if (!workingTFSettings[tf]) {
+      workingTFSettings[tf] = { sl_pips: 30, tp_targets: [30, 50] };
+    }
+    const slInp = document.getElementById('inp-sl-pips');
+    if (slInp) {
+      workingTFSettings[tf].sl_pips = parseFloat(slInp.value) || workingTFSettings[tf].sl_pips || 30;
+    }
+    const tpInps = document.querySelectorAll('#tp-inputs-container .inp-tp-val');
+    if (tpInps.length > 0) {
+      const vals = [];
+      tpInps.forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (!isNaN(v) && v > 0) vals.push(v);
+      });
+      if (vals.length > 0) {
+        workingTFSettings[tf].tp_targets = vals;
+      }
+    }
+  }
+
+  function renderModalForTimeframe(tf) {
+    activeModalTF = tf;
+    if (!workingTFSettings[tf]) {
+      workingTFSettings[tf] = DEFAULT_TF_SETTINGS[tf] 
+        ? JSON.parse(JSON.stringify(DEFAULT_TF_SETTINGS[tf]))
+        : { sl_pips: 30, tp_targets: [30, 50] };
+    }
+    const conf = workingTFSettings[tf];
+
+    // Highlight button in modal
+    const modalTfButtons = document.querySelectorAll('#modal-tf-buttons .modal-tf-btn');
+    modalTfButtons.forEach(b => {
+      b.classList.toggle('active', b.dataset.tf === tf);
+    });
+
+    // Update label
+    const tfLabel = document.getElementById('modal-active-tf-label');
+    if (tfLabel) {
+      const isScalp = ['1m', '5m'].includes(tf);
+      tfLabel.textContent = `${tf.toUpperCase()} ${isScalp ? 'SCALPING' : 'SWING'}`;
+    }
+
+    // Set Stop Loss input
+    const elSl = document.getElementById('inp-sl-pips');
+    if (elSl) elSl.value = conf.sl_pips || 30;
+
+    // Render TP inputs
     const container = document.getElementById('tp-inputs-container');
     const badge = document.getElementById('tp-count-badge');
-    if (!container) return;
-    if (badge) badge.textContent = `${modalTPList.length} Level`;
+    const tps = conf.tp_targets || [30, 50];
+    if (badge) badge.textContent = `${tps.length} Level`;
 
-    container.innerHTML = modalTPList.map((pips, idx) => `
-      <div class="tp-input-row" data-index="${idx}" style="display: flex; justify-content: space-between; align-items: center;">
-        <label style="color: var(--text-secondary); font-size: 13px;">TP${idx + 1} Target:</label>
-        <div style="display: flex; align-items: center; gap: 4px;">
-          <input type="number" class="inp-tp-val" data-index="${idx}" value="${pips}" min="5" max="2000" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px; font-family: var(--font-mono);">
-          <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+    if (container) {
+      container.innerHTML = tps.map((pips, idx) => `
+        <div class="tp-input-row" data-index="${idx}" style="display: flex; justify-content: space-between; align-items: center;">
+          <label style="color: var(--text-secondary); font-size: 13px;">TP${idx + 1} Target:</label>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <input type="number" class="inp-tp-val" data-index="${idx}" value="${pips}" min="5" max="2500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px; font-family: var(--font-mono);">
+            <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `).join('');
 
-    container.querySelectorAll('.inp-tp-val').forEach(input => {
-      input.addEventListener('input', (e) => {
-        const idx = parseInt(e.target.dataset.index);
-        const val = parseFloat(e.target.value) || 0;
-        if (!isNaN(idx) && idx >= 0 && idx < modalTPList.length) {
-          modalTPList[idx] = val;
-        }
+      container.querySelectorAll('.inp-tp-val').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          const val = parseFloat(e.target.value) || 0;
+          if (!isNaN(idx) && idx >= 0 && idx < workingTFSettings[activeModalTF].tp_targets.length) {
+            workingTFSettings[activeModalTF].tp_targets[idx] = val;
+          }
+        });
       });
-    });
+    }
   }
+
+  // Timeframe selector buttons inside the modal
+  const modalTfButtons = document.querySelectorAll('#modal-tf-buttons .modal-tf-btn');
+  modalTfButtons.forEach(b => {
+    b.addEventListener('click', () => {
+      const targetTf = b.dataset.tf;
+      if (targetTf === activeModalTF) return;
+      // Sync current inputs before switching
+      syncModalInputsToWorking(activeModalTF);
+      // Switch to new timeframe tab in modal
+      renderModalForTimeframe(targetTf);
+    });
+  });
 
   const btnAddTP = document.getElementById('btn-add-tp');
   if (btnAddTP) {
     btnAddTP.addEventListener('click', () => {
-      // Sync typed inputs first
-      const inputs = document.querySelectorAll('#tp-inputs-container .inp-tp-val');
-      inputs.forEach((inp, idx) => {
-        modalTPList[idx] = parseFloat(inp.value) || modalTPList[idx];
-      });
-
-      const lastVal = modalTPList.length > 0 ? modalTPList[modalTPList.length - 1] : 30;
-      const step = modalTPList.length >= 2 ? (modalTPList[modalTPList.length - 1] - modalTPList[modalTPList.length - 2]) : 20;
+      syncModalInputsToWorking(activeModalTF);
+      const list = workingTFSettings[activeModalTF].tp_targets;
+      const lastVal = list.length > 0 ? list[list.length - 1] : 30;
+      const step = list.length >= 2 ? (list[list.length - 1] - list[list.length - 2]) : 20;
       const newVal = Math.max(lastVal + (step > 0 ? step : 20), lastVal + 10);
-      modalTPList.push(newVal);
-      renderModalTPInputs();
+      list.push(newVal);
+      renderModalForTimeframe(activeModalTF);
 
       const container = document.getElementById('tp-inputs-container');
       if (container) container.scrollTop = container.scrollHeight;
-      showToast(`Ditambahkan TP${modalTPList.length} (${newVal} pips)`, '➕');
+      showToast(`[${activeModalTF.toUpperCase()}] Ditambahkan TP${list.length} (${newVal} pips)`, '➕');
     });
   }
 
   const btnRemoveTP = document.getElementById('btn-remove-tp');
   if (btnRemoveTP) {
     btnRemoveTP.addEventListener('click', () => {
-      if (modalTPList.length <= 1) {
+      syncModalInputsToWorking(activeModalTF);
+      const list = workingTFSettings[activeModalTF].tp_targets;
+      if (list.length <= 1) {
         showToast('Minimal harus ada 1 level TP!', '⚠️');
         return;
       }
-      const removedLevel = modalTPList.length;
-      modalTPList.pop();
-      renderModalTPInputs();
-      showToast(`TP${removedLevel} berhasil dibuang`, '➖');
+      const removedLevel = list.length;
+      list.pop();
+      renderModalForTimeframe(activeModalTF);
+      showToast(`[${activeModalTF.toUpperCase()}] TP${removedLevel} berhasil dibuang`, '➖');
     });
   }
 
   document.getElementById('btn-open-settings').addEventListener('click', () => {
     modalSettings.classList.add('active');
-    modalTPList = [...state.tp_targets];
-    renderModalTPInputs();
-    const elSl = document.getElementById('inp-sl-pips');
+    workingTFSettings = JSON.parse(JSON.stringify(state.tf_settings));
+    renderModalForTimeframe(state.timeframe);
     const elPz = document.getElementById('inp-pz-lookback');
-    if (elSl) elSl.value = state.sl_pips;
     if (elPz) elPz.value = state.pz_lookback;
   });
 
@@ -1492,33 +1605,22 @@ function setupEventListeners() {
   });
 
   document.getElementById('btn-save-settings').addEventListener('click', () => {
-    const inputs = document.querySelectorAll('#tp-inputs-container .inp-tp-val');
-    const collected = [];
-    inputs.forEach(inp => {
-      const v = parseFloat(inp.value);
-      if (!isNaN(v) && v > 0) collected.push(v);
-    });
+    // Sync current active tab
+    syncModalInputsToWorking(activeModalTF);
 
-    if (collected.length === 0) collected.push(30);
-
-    state.tp_targets = collected;
-    state.tp1_pips = collected[0] || 30;
-    state.tp2_pips = collected[1] || 50;
-    state.tp3_pips = collected[2] || 70;
-    state.tp4_pips = collected[3] || 100;
-    state.sl_pips = parseFloat(document.getElementById('inp-sl-pips').value) || 30;
     state.pz_lookback = parseInt(document.getElementById('inp-pz-lookback').value) || 7;
+    state.tf_settings = JSON.parse(JSON.stringify(workingTFSettings));
 
-    localStorage.setItem('tp_targets', JSON.stringify(state.tp_targets));
-    localStorage.setItem('sl_pips', state.sl_pips);
-    localStorage.setItem('tp1_pips', state.tp1_pips);
-    localStorage.setItem('tp2_pips', state.tp2_pips);
-    localStorage.setItem('tp3_pips', state.tp3_pips);
-    localStorage.setItem('tp4_pips', state.tp4_pips);
+    // Save to localStorage
+    localStorage.setItem('yuzare_tf_settings', JSON.stringify(state.tf_settings));
+    localStorage.setItem('pz_lookback', state.pz_lookback);
+
+    // Apply the settings for the currently active chart timeframe
+    applyTimeframeSettings(state.timeframe);
 
     modalSettings.classList.remove('active');
     loadMarketData();
-    showToast(`Parameter disimpan: SL (${state.sl_pips}p), ${state.tp_targets.length} Level TP (${state.tp_targets.join(', ')}p)`, '⚙️');
+    showToast(`✓ Pengaturan disimpan! (${state.timeframe.toUpperCase()}: ${state.tp_targets.length} Level TP)`, '⚙️');
   });
 
   // Logout Buttons

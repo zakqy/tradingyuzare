@@ -333,6 +333,24 @@
       </div>
       <div class="modal-body">
         <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+          <!-- Timeframe Selector Tabs for Settings -->
+          <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); font-weight: 700;">Atur Per Timeframe:</span>
+              <span id="modal-active-tf-label" style="font-size: 11.5px; color: var(--bull-cyan); font-family: var(--font-mono); font-weight: 700;">1M SCALPING</span>
+            </div>
+            <div class="modal-tf-selector" id="modal-tf-buttons" style="display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px;">
+              <button type="button" class="modal-tf-btn active" data-tf="1m">1m</button>
+              <button type="button" class="modal-tf-btn" data-tf="5m">5m</button>
+              <button type="button" class="modal-tf-btn" data-tf="15m">15m</button>
+              <button type="button" class="modal-tf-btn" data-tf="30m">30m</button>
+              <button type="button" class="modal-tf-btn" data-tf="1h">1H</button>
+              <button type="button" class="modal-tf-btn" data-tf="4h">4H</button>
+              <button type="button" class="modal-tf-btn" data-tf="1d">1D</button>
+              <button type="button" class="modal-tf-btn" data-tf="1w">1W</button>
+            </div>
+          </div>
+
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <label>Stop Loss (SL):</label>
             <div style="display: flex; align-items: center; gap: 4px;">
