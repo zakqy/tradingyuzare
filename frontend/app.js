@@ -1110,6 +1110,65 @@ function setupEventListeners() {
     modalSettings.classList.remove('active');
     loadMarketData();
   });
+
+  // Mobile Bottom Navigation Tabs (Khusus Tampilan Handphone)
+  const mobileNavBtns = document.querySelectorAll('.mobile-nav-btn');
+  const sidebar = document.querySelector('.sidebar');
+  const chartWrapper = document.querySelector('.chart-wrapper');
+
+  mobileNavBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      mobileNavBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      if (tab === 'chart') {
+        if (sidebar) sidebar.classList.remove('mobile-active');
+        if (chartWrapper) chartWrapper.style.display = 'block';
+        setTimeout(() => {
+          if (state.chart) {
+            const container = document.getElementById('chart-container');
+            state.chart.applyOptions({
+              width: container.clientWidth,
+              height: container.clientHeight,
+            });
+            renderPendingZonesOverlay();
+            renderSignalBadges();
+          }
+        }, 60);
+      } else if (tab === 'signals') {
+        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (sidebar) {
+          sidebar.classList.add('mobile-active');
+          sidebar.scrollTop = 0;
+        }
+      } else if (tab === 'pending') {
+        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (sidebar) {
+          sidebar.classList.add('mobile-active');
+          const pzEl = document.getElementById('pending-zones-list');
+          if (pzEl) pzEl.scrollIntoView({ behavior: 'smooth' });
+        }
+      } else if (tab === 'stats') {
+        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (sidebar) {
+          sidebar.classList.add('mobile-active');
+          const statsEl = document.querySelector('.stats-grid');
+          if (statsEl) statsEl.scrollIntoView({ behavior: 'smooth' });
+        }
+      } else if (tab === 'settings') {
+        const modal = document.getElementById('modal-settings');
+        if (modal) modal.classList.add('active');
+        const chartBtn = document.getElementById('nav-btn-chart');
+        if (chartBtn) {
+          mobileNavBtns.forEach(b => b.classList.remove('active'));
+          chartBtn.classList.add('active');
+          if (sidebar) sidebar.classList.remove('mobile-active');
+          if (chartWrapper) chartWrapper.style.display = 'block';
+        }
+      }
+    });
+  });
 }
 
 function showToast(msg, icon = '🔔') {
