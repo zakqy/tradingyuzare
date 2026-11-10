@@ -55,21 +55,6 @@
       </div>
     </div>
 
-    <!-- Middle OHLC Stats -->
-    <div class="ohlc-display">
-      <div class="ohlc-item">O <span id="val-open">--</span></div>
-      <div class="ohlc-item">H <span id="val-high">--</span></div>
-      <div class="ohlc-item">L <span id="val-low">--</span></div>
-      <div class="ohlc-item">C <span id="val-close">--</span></div>
-      <div class="ohlc-item" id="val-chg" style="color: var(--bull-cyan);">+0.00 (+0.00%)</div>
-      
-      <!-- Candle Countdown Timer -->
-      <div class="candle-countdown">
-        <span>⏳</span>
-        <span id="countdown-timer">00:29</span>
-      </div>
-    </div>
-
     <!-- Header Right Buttons -->
     <div class="header-actions">
       <!-- User Profile Badge & Logout -->
@@ -78,22 +63,22 @@
         <span id="user-display-name">zakzakqy</span>
       </div>
       <button class="action-btn danger" id="btn-logout" style="display: none;" title="Keluar dari Terminal">
-        🚪 Keluar
+        <span>🚪</span> <span class="btn-text">Keluar</span>
       </button>
 
-      <button class="action-btn" id="btn-sound-toggle">
-        <span id="sound-icon">🔊</span> <span id="sound-label">Audio ON</span>
+      <button class="action-btn" id="btn-sound-toggle" title="Nyalakan / Matikan Audio Sinyal">
+        <span id="sound-icon">🔊</span> <span id="sound-label" class="btn-text">Audio ON</span>
       </button>
-      <button class="action-btn" id="btn-open-settings">
-        ⚙️ Parameter
+      <button class="action-btn" id="btn-open-settings" title="Pengaturan Parameter Indikator">
+        <span>⚙️</span> <span class="btn-text">Parameter</span>
       </button>
-      <button class="action-btn primary" id="btn-open-pine">
-        📋 Copy Pine Script
+      <button class="action-btn primary" id="btn-open-pine" title="Salin Kode Pine Script TradingView">
+        <span>📋</span> <span class="btn-text">Pine Script</span>
       </button>
     </div>
   </header>
 
-  <!-- Execution & Indicator Ribbon (Mirip Screenshot) -->
+  <!-- Execution & Indicator Ribbon -->
   <div class="order-ribbon">
     <div class="quote-boxes">
       <div class="quote-box sell" id="box-sell-quote">
@@ -106,6 +91,21 @@
       <div class="quote-box buy" id="box-buy-quote">
         <span id="quote-buy-price">4,813.78</span>
         <span>BUY</span>
+      </div>
+    </div>
+
+    <!-- Real-Time OHLC Stats & Candle Countdown Bar -->
+    <div class="ohlc-display">
+      <div class="ohlc-item">O <span id="val-open">--</span></div>
+      <div class="ohlc-item">H <span id="val-high">--</span></div>
+      <div class="ohlc-item">L <span id="val-low">--</span></div>
+      <div class="ohlc-item">C <span id="val-close">--</span></div>
+      <div class="ohlc-item" id="val-chg" style="color: var(--bull-cyan);">+0.00 (+0.00%)</div>
+      
+      <!-- Candle Countdown Timer -->
+      <div class="candle-countdown">
+        <span>⏳</span>
+        <span id="countdown-timer">00:29</span>
       </div>
     </div>
 

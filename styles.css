@@ -61,14 +61,24 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  gap: 16px;
+  gap: 12px;
   z-index: 20;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  white-space: nowrap;
+}
+
+.header::-webkit-scrollbar {
+  display: none;
 }
 
 .brand-section {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .brand-badge {
@@ -184,13 +194,14 @@ body {
   border-color: var(--bull-cyan);
 }
 
-/* Middle OHLC stats */
+/* Live OHLC stats */
 .ohlc-display {
   display: flex;
   align-items: center;
   gap: 12px;
   font-family: var(--font-mono);
   font-size: 12px;
+  flex-shrink: 0;
 }
 
 .ohlc-item {
@@ -219,6 +230,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .action-btn {
@@ -287,6 +300,16 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  white-space: nowrap;
+}
+
+.order-ribbon::-webkit-scrollbar {
+  display: none;
 }
 
 .quote-boxes {
@@ -774,8 +797,52 @@ body {
 }
 
 /* ==========================================
-   MOBILE & RESPONSIVE DESIGN (HANDPHONE & TABLET)
+   RESPONSIVE DESIGN (DESKTOP / LAPTOP / TABLET / MOBILE)
    ========================================== */
+
+/* Responsive adjustments for Small Laptops & Medium Screens */
+@media (max-width: 1400px) {
+  .feature-pills {
+    display: none;
+  }
+}
+
+@media (max-width: 1250px) {
+  .indicator-title-tag {
+    display: none;
+  }
+  .action-btn .btn-text {
+    display: none;
+  }
+  .action-btn {
+    padding: 6px 9px;
+    gap: 0;
+  }
+  .custom-select {
+    max-width: 180px;
+  }
+}
+
+@media (max-width: 1050px) {
+  .header {
+    padding: 0 10px;
+    gap: 8px;
+  }
+  .brand-section {
+    gap: 8px;
+  }
+  .tf-btn {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+  .user-badge {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .offset-badge {
+    padding: 2px 6px;
+  }
+}
 
 /* Bottom Navigation Bar for Mobile */
 .mobile-bottom-nav {
@@ -873,8 +940,6 @@ body {
     white-space: nowrap;
     scrollbar-width: none;
     padding: 2px 0;
-    width: 100%;
-    justify-content: space-between;
   }
   .ohlc-display::-webkit-scrollbar {
     display: none;
@@ -902,8 +967,12 @@ body {
 
   /* Order Ribbon on Mobile */
   .order-ribbon {
-    height: 38px;
-    padding: 0 10px;
+    height: auto;
+    min-height: 38px;
+    padding: 4px 10px;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .quote-box {
