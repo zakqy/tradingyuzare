@@ -82,7 +82,16 @@ class YUZARE_Engine:
         self.qrr_mult = qrr_mult
         self.swing_lookback = swing_lookback
 
-    def analyze(self, candles: List[Dict[str, Any]], rr_tp1: float = 1.2, rr_tp2: float = 2.2, rr_tp3: float = 3.8) -> Dict[str, Any]:
+    def analyze(
+        self, 
+        candles: List[Dict[str, Any]], 
+        sl_pips: float = 30.0, 
+        tp1_pips: float = 30.0, 
+        tp2_pips: float = 50.0, 
+        tp3_pips: float = 70.0, 
+        tp4_pips: float = 100.0,
+        **kwargs
+    ) -> Dict[str, Any]:
         n = len(candles)
         if n < 25:
             return {
@@ -265,12 +274,11 @@ class YUZARE_Engine:
             if buy_cond and (i - last_buy_bar >= cooldown):
                 last_buy_bar = i
                 entry = c_curr["close"]
-                recent_low = min(lows[max(0, i - 4):i + 1])
-                risk = max(cur_atr * 1.2, entry - recent_low + (cur_atr * 0.15))
-                sl = entry - risk
-                tp1 = entry + (risk * rr_tp1)
-                tp2 = entry + (risk * rr_tp2)
-                tp3 = entry + (risk * rr_tp3)
+                sl = entry - (sl_pips * pip_unit)
+                tp1 = entry + (tp1_pips * pip_unit)
+                tp2 = entry + (tp2_pips * pip_unit)
+                tp3 = entry + (tp3_pips * pip_unit)
+                tp4 = entry + (tp4_pips * pip_unit)
 
                 trade = {
                     "id": f"BUY_{c_curr['time']}",
@@ -282,7 +290,9 @@ class YUZARE_Engine:
                     "tp1": round(tp1, 2),
                     "tp2": round(tp2, 2),
                     "tp3": round(tp3, 2),
-                    "risk": round(risk, 2),
+                    "tp4": round(tp4, 2),
+                    "sl_pips": sl_pips,
+                    "risk": round(sl_pips * pip_unit, 2),
                     "status": "ACTIVE",
                     "exit_time": None,
                     "exit_price": None,
@@ -304,12 +314,11 @@ class YUZARE_Engine:
             if sell_cond and (i - last_sell_bar >= cooldown):
                 last_sell_bar = i
                 entry = c_curr["close"]
-                recent_high = max(highs[max(0, i - 4):i + 1])
-                risk = max(cur_atr * 1.2, recent_high - entry + (cur_atr * 0.15))
-                sl = entry + risk
-                tp1 = entry - (risk * rr_tp1)
-                tp2 = entry - (risk * rr_tp2)
-                tp3 = entry - (risk * rr_tp3)
+                sl = entry + (sl_pips * pip_unit)
+                tp1 = entry - (tp1_pips * pip_unit)
+                tp2 = entry - (tp2_pips * pip_unit)
+                tp3 = entry - (tp3_pips * pip_unit)
+                tp4 = entry - (tp4_pips * pip_unit)
 
                 trade = {
                     "id": f"SELL_{c_curr['time']}",
@@ -321,7 +330,9 @@ class YUZARE_Engine:
                     "tp1": round(tp1, 2),
                     "tp2": round(tp2, 2),
                     "tp3": round(tp3, 2),
-                    "risk": round(risk, 2),
+                    "tp4": round(tp4, 2),
+                    "sl_pips": sl_pips,
+                    "risk": round(sl_pips * pip_unit, 2),
                     "status": "ACTIVE",
                     "exit_time": None,
                     "exit_price": None,
@@ -339,13 +350,13 @@ class YUZARE_Engine:
                     "details": trade
                 })
 
-        # 4. Multi-Level Trade Outcome Evaluation (TP1, TP2, TP3 & SL Trailing)
+        # 4. Multi-Level Trade Outcome Evaluation (TP1-4 & SL)
         for trade in buy_trades:
             start_idx = trade["bar_index"] + 1
-            cur_sl = trade["sl"]
             trade["tp1_hit"] = False
             trade["tp2_hit"] = False
             trade["tp3_hit"] = False
+            trade["tp4_hit"] = False
             trade["sl_hit"] = False
             trade["is_closed"] = False
 
@@ -356,34 +367,34 @@ class YUZARE_Engine:
                 # Target Hit Detection
                 if h >= trade["tp1"]:
                     trade["tp1_hit"] = True
-                    trade["max_rr_reached"] = rr_tp1
-                    cur_sl = trade["entry"] # Move Stop to Breakeven!
 
                 if h >= trade["tp2"]:
                     trade["tp2_hit"] = True
-                    trade["max_rr_reached"] = rr_tp2
-                    cur_sl = trade["tp1"] # Trail Stop to TP1!
 
                 if h >= trade["tp3"]:
                     trade["tp3_hit"] = True
-                    trade["status"] = "TP3 HIT 🎯"
-                    trade["max_rr_reached"] = rr_tp3
+
+                if h >= trade["tp4"]:
+                    trade["tp4_hit"] = True
+                    trade["status"] = "TP4 HIT 🎯"
                     trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
-                    trade["exit_price"] = trade["tp3"]
+                    trade["exit_price"] = trade["tp4"]
                     break
 
-                # SL / Trailing Hit
-                if l <= cur_sl:
+                # SL Hit
+                if l <= trade["sl"]:
                     trade["sl_hit"] = True
                     trade["status"] = "SL HIT"
                     trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
-                    trade["exit_price"] = cur_sl
+                    trade["exit_price"] = trade["sl"]
                     break
 
             if not trade["is_closed"]:
-                if trade["tp2_hit"]:
+                if trade["tp3_hit"]:
+                    trade["status"] = "TP3 HIT ✓"
+                elif trade["tp2_hit"]:
                     trade["status"] = "TP2 HIT ✓"
                 elif trade["tp1_hit"]:
                     trade["status"] = "TP1 HIT ✓"
@@ -393,10 +404,10 @@ class YUZARE_Engine:
 
         for trade in sell_trades:
             start_idx = trade["bar_index"] + 1
-            cur_sl = trade["sl"]
             trade["tp1_hit"] = False
             trade["tp2_hit"] = False
             trade["tp3_hit"] = False
+            trade["tp4_hit"] = False
             trade["sl_hit"] = False
             trade["is_closed"] = False
 
@@ -406,33 +417,33 @@ class YUZARE_Engine:
 
                 if l <= trade["tp1"]:
                     trade["tp1_hit"] = True
-                    trade["max_rr_reached"] = rr_tp1
-                    cur_sl = trade["entry"] # Move Stop to Breakeven!
 
                 if l <= trade["tp2"]:
                     trade["tp2_hit"] = True
-                    trade["max_rr_reached"] = rr_tp2
-                    cur_sl = trade["tp1"] # Trail Stop to TP1!
 
                 if l <= trade["tp3"]:
                     trade["tp3_hit"] = True
-                    trade["status"] = "TP3 HIT 🎯"
-                    trade["max_rr_reached"] = rr_tp3
+
+                if l <= trade["tp4"]:
+                    trade["tp4_hit"] = True
+                    trade["status"] = "TP4 HIT 🎯"
                     trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
-                    trade["exit_price"] = trade["tp3"]
+                    trade["exit_price"] = trade["tp4"]
                     break
 
-                if h >= cur_sl:
+                if h >= trade["sl"]:
                     trade["sl_hit"] = True
                     trade["status"] = "SL HIT"
                     trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
-                    trade["exit_price"] = cur_sl
+                    trade["exit_price"] = trade["sl"]
                     break
 
             if not trade["is_closed"]:
-                if trade["tp2_hit"]:
+                if trade["tp3_hit"]:
+                    trade["status"] = "TP3 HIT ✓"
+                elif trade["tp2_hit"]:
                     trade["status"] = "TP2 HIT ✓"
                 elif trade["tp1_hit"]:
                     trade["status"] = "TP1 HIT ✓"

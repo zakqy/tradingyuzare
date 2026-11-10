@@ -181,19 +181,23 @@
           
           <div class="target-grid">
             <div class="target-item" id="buy-target-tp1">
-              <span>TP1 (1.2R):</span>
+              <span>TP1 (30p):</span>
               <span id="buy-tp1-val">--</span>
             </div>
             <div class="target-item" id="buy-target-tp2">
-              <span>TP2 (2.2R):</span>
+              <span>TP2 (50p):</span>
               <span id="buy-tp2-val">--</span>
             </div>
             <div class="target-item" id="buy-target-tp3">
-              <span>TP3 (3.8R):</span>
+              <span>TP3 (70p):</span>
               <span id="buy-tp3-val">--</span>
             </div>
-            <div class="target-item" id="buy-target-sl" style="border-color: rgba(255, 61, 0, 0.4);">
-              <span style="color: var(--sl-red);">SL:</span>
+            <div class="target-item" id="buy-target-tp4">
+              <span>TP4 (100p):</span>
+              <span id="buy-tp4-val">--</span>
+            </div>
+            <div class="target-item" id="buy-target-sl" style="border-color: rgba(255, 61, 0, 0.4); grid-column: span 2;">
+              <span style="color: var(--sl-red);">SL (30 pips):</span>
               <span id="buy-sl-val">--</span>
             </div>
           </div>
@@ -221,19 +225,23 @@
           
           <div class="target-grid">
             <div class="target-item" id="sell-target-tp1">
-              <span>TP1 (1.2R):</span>
+              <span>TP1 (30p):</span>
               <span id="sell-tp1-val">--</span>
             </div>
             <div class="target-item" id="sell-target-tp2">
-              <span>TP2 (2.2R):</span>
+              <span>TP2 (50p):</span>
               <span id="sell-tp2-val">--</span>
             </div>
             <div class="target-item" id="sell-target-tp3">
-              <span>TP3 (3.8R):</span>
+              <span>TP3 (70p):</span>
               <span id="sell-tp3-val">--</span>
             </div>
-            <div class="target-item" id="sell-target-sl" style="border-color: rgba(255, 61, 0, 0.4);">
-              <span style="color: var(--sl-red);">SL:</span>
+            <div class="target-item" id="sell-target-tp4">
+              <span>TP4 (100p):</span>
+              <span id="sell-tp4-val">--</span>
+            </div>
+            <div class="target-item" id="sell-target-sl" style="border-color: rgba(255, 61, 0, 0.4); grid-column: span 2;">
+              <span style="color: var(--sl-red);">SL (30 pips):</span>
               <span id="sell-sl-val">--</span>
             </div>
           </div>
@@ -326,16 +334,39 @@
       <div class="modal-body">
         <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP1 Risk/Reward Ratio:</label>
-            <input type="number" id="inp-rr-tp1" value="1.2" step="0.1" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+            <label>Stop Loss (SL):</label>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="number" id="inp-sl-pips" value="30" min="5" max="300" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+            </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP2 Risk/Reward Ratio:</label>
-            <input type="number" id="inp-rr-tp2" value="2.2" step="0.1" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+            <label>TP1 Target:</label>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="number" id="inp-tp1-pips" value="30" min="5" max="500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+            </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <label>TP3 Risk/Reward Ratio:</label>
-            <input type="number" id="inp-rr-tp3" value="3.8" step="0.1" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+            <label>TP2 Target:</label>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="number" id="inp-tp2-pips" value="50" min="5" max="500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>TP3 Target:</label>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="number" id="inp-tp3-pips" value="70" min="5" max="500" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>TP4 Target:</label>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="number" id="inp-tp4-pips" value="100" min="5" max="1000" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+              <span style="color: var(--text-secondary); font-size: 11px;">pips</span>
+            </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <label>Pending Zones Lookback:</label>

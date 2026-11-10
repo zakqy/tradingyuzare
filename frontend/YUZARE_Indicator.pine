@@ -16,13 +16,15 @@ pz_lookback    = input.int(7, "Pivot Lookback (Swing High/Low)", minval=3, maxva
 pz_forward     = input.int(25, "Forward Projection Bars", minval=5, maxval=50, group=grp_pz)
 pz_max_zones   = input.int(2, "Max Zones per Side", minval=1, maxval=4, group=grp_pz)
 
-grp_ds = "02 & 03. Dual Signal & TP/SL Target Multipliers"
+grp_ds = "02 & 03. Dual Signal & TP/SL Target (Pips)"
 show_buy_signals  = input.bool(true, "Enable BUY Signals", group=grp_ds)
 show_sell_signals = input.bool(true, "Enable SELL Signals", group=grp_ds)
-rr_tp1 = input.float(1.2, "TP1 Risk/Reward Ratio", step=0.1, group=grp_ds)
-rr_tp2 = input.float(2.2, "TP2 Risk/Reward Ratio", step=0.1, group=grp_ds)
-rr_tp3 = input.float(3.8, "TP3 Risk/Reward Ratio", step=0.1, group=grp_ds)
-show_tpsl_lines   = input.bool(true, "Draw TP1, TP2, TP3 & SL Lines", group=grp_ds)
+sl_pips  = input.int(30, "Stop Loss (Pips)", minval=5, group=grp_ds)
+tp1_pips = input.int(30, "TP1 Target (Pips)", minval=5, group=grp_ds)
+tp2_pips = input.int(50, "TP2 Target (Pips)", minval=5, group=grp_ds)
+tp3_pips = input.int(70, "TP3 Target (Pips)", minval=5, group=grp_ds)
+tp4_pips = input.int(100, "TP4 Target (Pips)", minval=5, group=grp_ds)
+show_tpsl_lines   = input.bool(true, "Draw TP1-4 & SL Lines", group=grp_ds)
 
 grp_theme = "Visual Theme (Green & Red)"
 color_bull = input.color(#00C853, "Bullish Candle (Green)", group=grp_theme)
@@ -72,39 +74,45 @@ if sell_signal
 // 3. DUAL SIGNAL & TP/SL DRAWINGS
 // BUY dan SELL berjalan independen tanpa saling membatalkan
 // ==========================================
+pip_unit = (syminfo.type == "forex" and not str.contains(syminfo.ticker, "JPY")) ? 0.0001 : (str.contains(syminfo.ticker, "XAU") or syminfo.type == "metal") ? 0.1 : (syminfo.mintick * 10)
+
 var float active_buy_entry = na
 var float active_buy_sl = na
 var float active_buy_tp1 = na
 var float active_buy_tp2 = na
 var float active_buy_tp3 = na
+var float active_buy_tp4 = na
 
 var line buy_line_entry = na
 var line buy_line_sl    = na
 var line buy_line_tp1   = na
 var line buy_line_tp2   = na
 var line buy_line_tp3   = na
+var line buy_line_tp4   = na
 
 var line sell_line_entry = na
 var line sell_line_sl    = na
 var line sell_line_tp1   = na
 var line sell_line_tp2   = na
 var line sell_line_tp3   = na
+var line sell_line_tp4   = na
 
 var float active_sell_entry = na
 var float active_sell_sl = na
 var float active_sell_tp1 = na
 var float active_sell_tp2 = na
 var float active_sell_tp3 = na
+var float active_sell_tp4 = na
 
 // Buy Trigger Action
 if buy_signal
     entry_p = close
-    risk = math.max(atr_val * atr_mult, entry_p - ta.lowest(low, 5))
     active_buy_entry := entry_p
-    active_buy_sl    := entry_p - risk
-    active_buy_tp1   := entry_p + (risk * rr_tp1)
-    active_buy_tp2   := entry_p + (risk * rr_tp2)
-    active_buy_tp3   := entry_p + (risk * rr_tp3)
+    active_buy_sl    := entry_p - (sl_pips * pip_unit)
+    active_buy_tp1   := entry_p + (tp1_pips * pip_unit)
+    active_buy_tp2   := entry_p + (tp2_pips * pip_unit)
+    active_buy_tp3   := entry_p + (tp3_pips * pip_unit)
+    active_buy_tp4   := entry_p + (tp4_pips * pip_unit)
     
     // Label BUY di bawah candle (Badge Rounded mirip TradingView)
     label.new(
@@ -120,6 +128,7 @@ if buy_signal
     line.delete(buy_line_tp1)
     line.delete(buy_line_tp2)
     line.delete(buy_line_tp3)
+    line.delete(buy_line_tp4)
 
     // Gambar Garis TP/SL
     if show_tpsl_lines
@@ -127,7 +136,8 @@ if buy_signal
         buy_line_sl    := line.new(bar_index, active_buy_sl,    bar_index + 12, active_buy_sl,    color=color.new(color.red, 20),  style=line.style_dashed, width=1)
         buy_line_tp1   := line.new(bar_index, active_buy_tp1,   bar_index + 12, active_buy_tp1,   color=color.new(#00C853, 20),    style=line.style_dashed, width=1)
         buy_line_tp2   := line.new(bar_index, active_buy_tp2,   bar_index + 12, active_buy_tp2,   color=color.new(#00C853, 20),    style=line.style_dashed, width=1)
-        buy_line_tp3   := line.new(bar_index, active_buy_tp3,   bar_index + 12, active_buy_tp3,   color=color.new(#00C853, 10),    style=line.style_solid, width=2)
+        buy_line_tp3   := line.new(bar_index, active_buy_tp3,   bar_index + 12, active_buy_tp3,   color=color.new(#00C853, 20),    style=line.style_dashed, width=1)
+        buy_line_tp4   := line.new(bar_index, active_buy_tp4,   bar_index + 12, active_buy_tp4,   color=color.new(#00C853, 10),    style=line.style_solid, width=2)
 
 // Otomatis hapus garis jika target BUY sudah terkena (Hit TP/SL)
 if not na(active_buy_entry)
@@ -137,12 +147,16 @@ if not na(active_buy_entry)
     if high >= active_buy_tp2 and not na(buy_line_tp2)
         line.delete(buy_line_tp2)
         buy_line_tp2 := na
-    if high >= active_buy_tp3
+    if high >= active_buy_tp3 and not na(buy_line_tp3)
+        line.delete(buy_line_tp3)
+        buy_line_tp3 := na
+    if high >= active_buy_tp4
         line.delete(buy_line_entry)
         line.delete(buy_line_sl)
         line.delete(buy_line_tp1)
         line.delete(buy_line_tp2)
         line.delete(buy_line_tp3)
+        line.delete(buy_line_tp4)
         active_buy_entry := na
     if low <= active_buy_sl
         line.delete(buy_line_entry)
@@ -150,17 +164,18 @@ if not na(active_buy_entry)
         line.delete(buy_line_tp1)
         line.delete(buy_line_tp2)
         line.delete(buy_line_tp3)
+        line.delete(buy_line_tp4)
         active_buy_entry := na
 
 // Sell Trigger Action (Independen dari Buy!)
 if sell_signal
     entry_p = close
-    risk = math.max(atr_val * atr_mult, ta.highest(high, 5) - entry_p)
     active_sell_entry := entry_p
-    active_sell_sl    := entry_p + risk
-    active_sell_tp1   := entry_p - (risk * rr_tp1)
-    active_sell_tp2   := entry_p - (risk * rr_tp2)
-    active_sell_tp3   := entry_p - (risk * rr_tp3)
+    active_sell_sl    := entry_p + (sl_pips * pip_unit)
+    active_sell_tp1   := entry_p - (tp1_pips * pip_unit)
+    active_sell_tp2   := entry_p - (tp2_pips * pip_unit)
+    active_sell_tp3   := entry_p - (tp3_pips * pip_unit)
+    active_sell_tp4   := entry_p - (tp4_pips * pip_unit)
     
     // Label SELL di atas candle (Badge Rounded mirip TradingView)
     label.new(
@@ -176,6 +191,7 @@ if sell_signal
     line.delete(sell_line_tp1)
     line.delete(sell_line_tp2)
     line.delete(sell_line_tp3)
+    line.delete(sell_line_tp4)
 
     // Gambar Garis TP/SL
     if show_tpsl_lines
@@ -183,7 +199,8 @@ if sell_signal
         sell_line_sl    := line.new(bar_index, active_sell_sl,    bar_index + 12, active_sell_sl,    color=color.new(color.red, 20),  style=line.style_dashed, width=1)
         sell_line_tp1   := line.new(bar_index, active_sell_tp1,   bar_index + 12, active_sell_tp1,   color=color.new(#FF1744, 20),    style=line.style_dashed, width=1)
         sell_line_tp2   := line.new(bar_index, active_sell_tp2,   bar_index + 12, active_sell_tp2,   color=color.new(#FF1744, 20),    style=line.style_dashed, width=1)
-        sell_line_tp3   := line.new(bar_index, active_sell_tp3,   bar_index + 12, active_sell_tp3,   color=color.new(#FF1744, 10),    style=line.style_solid, width=2)
+        sell_line_tp3   := line.new(bar_index, active_sell_tp3,   bar_index + 12, active_sell_tp3,   color=color.new(#FF1744, 20),    style=line.style_dashed, width=1)
+        sell_line_tp4   := line.new(bar_index, active_sell_tp4,   bar_index + 12, active_sell_tp4,   color=color.new(#FF1744, 10),    style=line.style_solid, width=2)
 
 // Otomatis hapus garis jika target SELL sudah terkena (Hit TP/SL)
 if not na(active_sell_entry)
@@ -193,12 +210,16 @@ if not na(active_sell_entry)
     if low <= active_sell_tp2 and not na(sell_line_tp2)
         line.delete(sell_line_tp2)
         sell_line_tp2 := na
-    if low <= active_sell_tp3
+    if low <= active_sell_tp3 and not na(sell_line_tp3)
+        line.delete(sell_line_tp3)
+        sell_line_tp3 := na
+    if low <= active_sell_tp4
         line.delete(sell_line_entry)
         line.delete(sell_line_sl)
         line.delete(sell_line_tp1)
         line.delete(sell_line_tp2)
         line.delete(sell_line_tp3)
+        line.delete(sell_line_tp4)
         active_sell_entry := na
     if high >= active_sell_sl
         line.delete(sell_line_entry)
@@ -206,6 +227,7 @@ if not na(active_sell_entry)
         line.delete(sell_line_tp1)
         line.delete(sell_line_tp2)
         line.delete(sell_line_tp3)
+        line.delete(sell_line_tp4)
         active_sell_entry := na
 
 // ==========================================

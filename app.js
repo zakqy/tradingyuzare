@@ -9,9 +9,11 @@ const state = {
   symbol: 'XAUUSD',
   timeframe: '1m',
   offset: parseFloat(localStorage.getItem('offset_XAUUSD') || '8.5'),
-  rr_tp1: 1.2,
-  rr_tp2: 2.2,
-  rr_tp3: 3.8,
+  sl_pips: parseFloat(localStorage.getItem('sl_pips') || '30'),
+  tp1_pips: parseFloat(localStorage.getItem('tp1_pips') || '30'),
+  tp2_pips: parseFloat(localStorage.getItem('tp2_pips') || '50'),
+  tp3_pips: parseFloat(localStorage.getItem('tp3_pips') || '70'),
+  tp4_pips: parseFloat(localStorage.getItem('tp4_pips') || '100'),
   pz_lookback: 7,
   soundEnabled: true,
   chart: null,
@@ -200,6 +202,15 @@ function initChart() {
   });
 }
 
+function getPipUnit(symbol, price) {
+  if (symbol === 'XAUUSD') return 0.1; // 1 pip = $0.10 (30p = $3.00, 50p = $5.00, 70p = $7.00, 100p = $10.00)
+  if (symbol === 'BTCUSD') return 1.0;
+  if (symbol === 'ETHUSD') return 0.1;
+  if (symbol === 'SOLUSD') return 0.01;
+  if (symbol === 'EURUSD' || symbol === 'GBPUSD') return 0.0001;
+  return price > 500 ? 0.1 : 0.0001;
+}
+
 // Client-Side Calculation Engine (For Standalone GitHub Pages Mode)
 function computeClientSideIndicators(candles) {
   const n = candles.length;
@@ -321,20 +332,28 @@ function computeClientSideIndicators(candles) {
     if (isUp && closes[i] > candles[i].open && i - lastBuy >= 5) {
       lastBuy = i;
       const entry = closes[i];
-      const risk = Math.max(atr[i] * 1.3, 1.5);
+      const pipUnit = getPipUnit(state.symbol, entry);
+      const slDist = state.sl_pips * pipUnit;
+      const tp1Dist = state.tp1_pips * pipUnit;
+      const tp2Dist = state.tp2_pips * pipUnit;
+      const tp3Dist = state.tp3_pips * pipUnit;
+      const tp4Dist = state.tp4_pips * pipUnit;
+
       const trade = {
         id: `BUY_${candles[i].time}`,
         type: 'BUY',
         bar_index: i,
         entry: Math.round(entry * 100) / 100,
-        sl: Math.round((entry - risk) * 100) / 100,
-        tp1: Math.round((entry + risk * state.rr_tp1) * 100) / 100,
-        tp2: Math.round((entry + risk * state.rr_tp2) * 100) / 100,
-        tp3: Math.round((entry + risk * state.rr_tp3) * 100) / 100,
+        sl: Math.round((entry - slDist) * 100) / 100,
+        tp1: Math.round((entry + tp1Dist) * 100) / 100,
+        tp2: Math.round((entry + tp2Dist) * 100) / 100,
+        tp3: Math.round((entry + tp3Dist) * 100) / 100,
+        tp4: Math.round((entry + tp4Dist) * 100) / 100,
         status: 'ACTIVE',
         tp1_hit: false,
         tp2_hit: false,
         tp3_hit: false,
+        tp4_hit: false,
         sl_hit: false,
         is_closed: false,
       };
@@ -343,9 +362,10 @@ function computeClientSideIndicators(candles) {
       for (let m = i + 1; m < n; m++) {
         if (highs[m] >= trade.tp1) trade.tp1_hit = true;
         if (highs[m] >= trade.tp2) trade.tp2_hit = true;
-        if (highs[m] >= trade.tp3) {
-          trade.tp3_hit = true;
-          trade.status = 'TP3 HIT 🎯';
+        if (highs[m] >= trade.tp3) trade.tp3_hit = true;
+        if (highs[m] >= trade.tp4) {
+          trade.tp4_hit = true;
+          trade.status = 'TP4 HIT 🎯';
           trade.is_closed = true;
           break;
         }
@@ -357,7 +377,8 @@ function computeClientSideIndicators(candles) {
         }
       }
       if (!trade.is_closed) {
-        if (trade.tp2_hit) trade.status = 'TP2 HIT ✓';
+        if (trade.tp3_hit) trade.status = 'TP3 HIT ✓';
+        else if (trade.tp2_hit) trade.status = 'TP2 HIT ✓';
         else if (trade.tp1_hit) trade.status = 'TP1 HIT ✓';
         else trade.status = 'ACTIVE';
       }
@@ -369,20 +390,28 @@ function computeClientSideIndicators(candles) {
     if (isDn && closes[i] < candles[i].open && i - lastSell >= 5) {
       lastSell = i;
       const entry = closes[i];
-      const risk = Math.max(atr[i] * 1.3, 1.5);
+      const pipUnit = getPipUnit(state.symbol, entry);
+      const slDist = state.sl_pips * pipUnit;
+      const tp1Dist = state.tp1_pips * pipUnit;
+      const tp2Dist = state.tp2_pips * pipUnit;
+      const tp3Dist = state.tp3_pips * pipUnit;
+      const tp4Dist = state.tp4_pips * pipUnit;
+
       const trade = {
         id: `SELL_${candles[i].time}`,
         type: 'SELL',
         bar_index: i,
         entry: Math.round(entry * 100) / 100,
-        sl: Math.round((entry + risk) * 100) / 100,
-        tp1: Math.round((entry - risk * state.rr_tp1) * 100) / 100,
-        tp2: Math.round((entry - risk * state.rr_tp2) * 100) / 100,
-        tp3: Math.round((entry - risk * state.rr_tp3) * 100) / 100,
+        sl: Math.round((entry + slDist) * 100) / 100,
+        tp1: Math.round((entry - tp1Dist) * 100) / 100,
+        tp2: Math.round((entry - tp2Dist) * 100) / 100,
+        tp3: Math.round((entry - tp3Dist) * 100) / 100,
+        tp4: Math.round((entry - tp4Dist) * 100) / 100,
         status: 'ACTIVE',
         tp1_hit: false,
         tp2_hit: false,
         tp3_hit: false,
+        tp4_hit: false,
         sl_hit: false,
         is_closed: false,
       };
@@ -390,9 +419,10 @@ function computeClientSideIndicators(candles) {
       for (let m = i + 1; m < n; m++) {
         if (lows[m] <= trade.tp1) trade.tp1_hit = true;
         if (lows[m] <= trade.tp2) trade.tp2_hit = true;
-        if (lows[m] <= trade.tp3) {
-          trade.tp3_hit = true;
-          trade.status = 'TP3 HIT 🎯';
+        if (lows[m] <= trade.tp3) trade.tp3_hit = true;
+        if (lows[m] <= trade.tp4) {
+          trade.tp4_hit = true;
+          trade.status = 'TP4 HIT 🎯';
           trade.is_closed = true;
           break;
         }
@@ -404,7 +434,8 @@ function computeClientSideIndicators(candles) {
         }
       }
       if (!trade.is_closed) {
-        if (trade.tp2_hit) trade.status = 'TP2 HIT ✓';
+        if (trade.tp3_hit) trade.status = 'TP3 HIT ✓';
+        else if (trade.tp2_hit) trade.status = 'TP2 HIT ✓';
         else if (trade.tp1_hit) trade.status = 'TP1 HIT ✓';
         else trade.status = 'ACTIVE';
       }
@@ -442,7 +473,7 @@ async function loadMarketData() {
 
     if (isLocal) {
       try {
-        const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&rr_tp1=${state.rr_tp1}&rr_tp2=${state.rr_tp2}&rr_tp3=${state.rr_tp3}`;
+        const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
         const resp = await fetch(url);
         if (resp.ok) data = await resp.json();
       } catch (e) {
@@ -501,7 +532,7 @@ async function refreshSignalsSilently() {
   try {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
     if (isLocal) {
-      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&rr_tp1=${state.rr_tp1}&rr_tp2=${state.rr_tp2}&rr_tp3=${state.rr_tp3}`;
+      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
@@ -652,48 +683,56 @@ function renderTPSLLines() {
   };
 
   // Posisi BUY aktif
-  if (state.activeBuy && !state.activeBuy.is_closed && state.activeBuy.status !== 'SL_HIT' && state.activeBuy.status !== 'TP3 HIT 🎯') {
+  if (state.activeBuy && !state.activeBuy.is_closed && state.activeBuy.status !== 'SL HIT' && state.activeBuy.status !== 'TP4 HIT 🎯') {
     const b = state.activeBuy;
     addLine(b.entry, 'BUY Entry', '#90caf9', LightweightCharts.LineStyle.Dotted, 1);
     
-    // Jika SL belum kena, tampilkan garis SL
+    // Jika SL belum kena, tampilkan garis SL (30p)
     if (!b.sl_hit) {
-      addLine(b.sl, 'BUY SL', '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
+      addLine(b.sl, `BUY SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
     // Jika TP1 sudah hit -> garis TP1 otomatis dihilangkan!
     if (!b.tp1_hit) {
-      addLine(b.tp1, 'BUY TP1', '#00c853', LightweightCharts.LineStyle.Dashed, 1);
+      addLine(b.tp1, `BUY TP1 (${state.tp1_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
     }
     // Jika TP2 sudah hit -> garis TP2 otomatis dihilangkan!
     if (!b.tp2_hit) {
-      addLine(b.tp2, 'BUY TP2', '#00c853', LightweightCharts.LineStyle.Dashed, 1);
+      addLine(b.tp2, `BUY TP2 (${state.tp2_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP3 belum hit -> tampilkan TP3
+    // Jika TP3 sudah hit -> garis TP3 otomatis dihilangkan!
     if (!b.tp3_hit) {
-      addLine(b.tp3, 'BUY TP3', '#00c853', LightweightCharts.LineStyle.Solid, 2);
+      addLine(b.tp3, `BUY TP3 (${state.tp3_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
+    }
+    // Jika TP4 belum hit -> tampilkan TP4 (100p)
+    if (!b.tp4_hit) {
+      addLine(b.tp4, `BUY TP4 (${state.tp4_pips}p)`, '#00c853', LightweightCharts.LineStyle.Solid, 2);
     }
   }
 
   // Posisi SELL aktif
-  if (state.activeSell && !state.activeSell.is_closed && state.activeSell.status !== 'SL_HIT' && state.activeSell.status !== 'TP3 HIT 🎯') {
+  if (state.activeSell && !state.activeSell.is_closed && state.activeSell.status !== 'SL HIT' && state.activeSell.status !== 'TP4 HIT 🎯') {
     const s = state.activeSell;
     addLine(s.entry, 'SELL Entry', '#ce93d8', LightweightCharts.LineStyle.Dotted, 1);
     
-    // Jika SL belum kena, tampilkan garis SL
+    // Jika SL belum kena, tampilkan garis SL (30p)
     if (!s.sl_hit) {
-      addLine(s.sl, 'SELL SL', '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
+      addLine(s.sl, `SELL SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
     // Jika TP1 sudah hit -> garis TP1 otomatis dihilangkan!
     if (!s.tp1_hit) {
-      addLine(s.tp1, 'SELL TP1', '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
+      addLine(s.tp1, `SELL TP1 (${state.tp1_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
     }
     // Jika TP2 sudah hit -> garis TP2 otomatis dihilangkan!
     if (!s.tp2_hit) {
-      addLine(s.tp2, 'SELL TP2', '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
+      addLine(s.tp2, `SELL TP2 (${state.tp2_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP3 belum hit -> tampilkan TP3
+    // Jika TP3 sudah hit -> garis TP3 otomatis dihilangkan!
     if (!s.tp3_hit) {
-      addLine(s.tp3, 'SELL TP3', '#ff1744', LightweightCharts.LineStyle.Solid, 2);
+      addLine(s.tp3, `SELL TP3 (${state.tp3_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
+    }
+    // Jika TP4 belum hit -> tampilkan TP4 (100p)
+    if (!s.tp4_hit) {
+      addLine(s.tp4, `SELL TP4 (${state.tp4_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Solid, 2);
     }
   }
 }
@@ -709,7 +748,21 @@ function updateSidebar(data) {
     document.getElementById('buy-tp1-val').textContent = b.tp1.toFixed(2);
     document.getElementById('buy-tp2-val').textContent = b.tp2.toFixed(2);
     document.getElementById('buy-tp3-val').textContent = b.tp3.toFixed(2);
+    const tp4El = document.getElementById('buy-tp4-val');
+    if (tp4El) tp4El.textContent = b.tp4 ? b.tp4.toFixed(2) : '--';
     document.getElementById('buy-sl-val').textContent = b.sl.toFixed(2);
+
+    const bBadge = document.getElementById('buy-status-badge');
+    if (bBadge) bBadge.textContent = b.status || 'ACTIVE';
+
+    const elTp1 = document.getElementById('buy-target-tp1');
+    const elTp2 = document.getElementById('buy-target-tp2');
+    const elTp3 = document.getElementById('buy-target-tp3');
+    const elTp4 = document.getElementById('buy-target-tp4');
+    if (elTp1) elTp1.classList.toggle('hit', !!b.tp1_hit);
+    if (elTp2) elTp2.classList.toggle('hit', !!b.tp2_hit);
+    if (elTp3) elTp3.classList.toggle('hit', !!b.tp3_hit);
+    if (elTp4) elTp4.classList.toggle('hit', !!b.tp4_hit);
   }
 
   if (state.activeSell) {
@@ -718,7 +771,21 @@ function updateSidebar(data) {
     document.getElementById('sell-tp1-val').textContent = s.tp1.toFixed(2);
     document.getElementById('sell-tp2-val').textContent = s.tp2.toFixed(2);
     document.getElementById('sell-tp3-val').textContent = s.tp3.toFixed(2);
+    const tp4El = document.getElementById('sell-tp4-val');
+    if (tp4El) tp4El.textContent = s.tp4 ? s.tp4.toFixed(2) : '--';
     document.getElementById('sell-sl-val').textContent = s.sl.toFixed(2);
+
+    const sBadge = document.getElementById('sell-status-badge');
+    if (sBadge) sBadge.textContent = s.status || 'ACTIVE';
+
+    const elTp1 = document.getElementById('sell-target-tp1');
+    const elTp2 = document.getElementById('sell-target-tp2');
+    const elTp3 = document.getElementById('sell-target-tp3');
+    const elTp4 = document.getElementById('sell-target-tp4');
+    if (elTp1) elTp1.classList.toggle('hit', !!s.tp1_hit);
+    if (elTp2) elTp2.classList.toggle('hit', !!s.tp2_hit);
+    if (elTp3) elTp3.classList.toggle('hit', !!s.tp3_hit);
+    if (elTp4) elTp4.classList.toggle('hit', !!s.tp4_hit);
   }
 
   if (data.stats) {
@@ -775,10 +842,14 @@ function updateSidebarPrice(currentPrice) {
       state.activeBuy.tp2_hit = true;
       needsTPSLRedraw = true;
     }
-    if (currentPrice >= state.activeBuy.tp3) {
+    if (currentPrice >= state.activeBuy.tp3 && !state.activeBuy.tp3_hit) {
       state.activeBuy.tp3_hit = true;
+      needsTPSLRedraw = true;
+    }
+    if (currentPrice >= state.activeBuy.tp4) {
+      state.activeBuy.tp4_hit = true;
       state.activeBuy.is_closed = true;
-      state.activeBuy.status = 'TP3 HIT 🎯';
+      state.activeBuy.status = 'TP4 HIT 🎯';
       needsTPSLRedraw = true;
     }
     if (currentPrice <= state.activeBuy.sl) {
@@ -798,10 +869,14 @@ function updateSidebarPrice(currentPrice) {
       state.activeSell.tp2_hit = true;
       needsTPSLRedraw = true;
     }
-    if (currentPrice <= state.activeSell.tp3) {
+    if (currentPrice <= state.activeSell.tp3 && !state.activeSell.tp3_hit) {
       state.activeSell.tp3_hit = true;
+      needsTPSLRedraw = true;
+    }
+    if (currentPrice <= state.activeSell.tp4) {
+      state.activeSell.tp4_hit = true;
       state.activeSell.is_closed = true;
-      state.activeSell.status = 'TP3 HIT 🎯';
+      state.activeSell.status = 'TP4 HIT 🎯';
       needsTPSLRedraw = true;
     }
     if (currentPrice >= state.activeSell.sl) {
@@ -1098,17 +1173,39 @@ function setupEventListeners() {
   const modalSettings = document.getElementById('modal-settings');
   document.getElementById('btn-open-settings').addEventListener('click', () => {
     modalSettings.classList.add('active');
+    const elSl = document.getElementById('inp-sl-pips');
+    const elTp1 = document.getElementById('inp-tp1-pips');
+    const elTp2 = document.getElementById('inp-tp2-pips');
+    const elTp3 = document.getElementById('inp-tp3-pips');
+    const elTp4 = document.getElementById('inp-tp4-pips');
+    const elPz = document.getElementById('inp-pz-lookback');
+    if (elSl) elSl.value = state.sl_pips;
+    if (elTp1) elTp1.value = state.tp1_pips;
+    if (elTp2) elTp2.value = state.tp2_pips;
+    if (elTp3) elTp3.value = state.tp3_pips;
+    if (elTp4) elTp4.value = state.tp4_pips;
+    if (elPz) elPz.value = state.pz_lookback;
   });
   document.getElementById('btn-close-settings').addEventListener('click', () => {
     modalSettings.classList.remove('active');
   });
   document.getElementById('btn-save-settings').addEventListener('click', () => {
-    state.rr_tp1 = parseFloat(document.getElementById('inp-rr-tp1').value) || 1.2;
-    state.rr_tp2 = parseFloat(document.getElementById('inp-rr-tp2').value) || 2.2;
-    state.rr_tp3 = parseFloat(document.getElementById('inp-rr-tp3').value) || 3.8;
+    state.sl_pips = parseFloat(document.getElementById('inp-sl-pips').value) || 30;
+    state.tp1_pips = parseFloat(document.getElementById('inp-tp1-pips').value) || 30;
+    state.tp2_pips = parseFloat(document.getElementById('inp-tp2-pips').value) || 50;
+    state.tp3_pips = parseFloat(document.getElementById('inp-tp3-pips').value) || 70;
+    state.tp4_pips = parseFloat(document.getElementById('inp-tp4-pips').value) || 100;
     state.pz_lookback = parseInt(document.getElementById('inp-pz-lookback').value) || 7;
+
+    localStorage.setItem('sl_pips', state.sl_pips);
+    localStorage.setItem('tp1_pips', state.tp1_pips);
+    localStorage.setItem('tp2_pips', state.tp2_pips);
+    localStorage.setItem('tp3_pips', state.tp3_pips);
+    localStorage.setItem('tp4_pips', state.tp4_pips);
+
     modalSettings.classList.remove('active');
     loadMarketData();
+    showToast(`Parameter diperbarui: SL (${state.sl_pips}p), TP (${state.tp1_pips}, ${state.tp2_pips}, ${state.tp3_pips}, ${state.tp4_pips}p)`, '⚙️');
   });
 
   // Logout Buttons

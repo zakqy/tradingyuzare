@@ -108,9 +108,14 @@ def get_analysis(
     symbol: str = Query("XAUUSD", description="Symbol e.g. XAUUSD, BTCUSD"),
     timeframe: str = Query("1m", description="Timeframe e.g. 1m, 5m, 1h, 1d"),
     limit: int = Query(250, ge=50, le=1000),
-    rr_tp1: float = Query(1.2),
-    rr_tp2: float = Query(2.2),
-    rr_tp3: float = Query(3.8)
+    sl_pips: float = Query(30.0, description="Stop Loss in pips"),
+    tp1_pips: float = Query(30.0, description="TP1 in pips"),
+    tp2_pips: float = Query(50.0, description="TP2 in pips"),
+    tp3_pips: float = Query(70.0, description="TP3 in pips"),
+    tp4_pips: float = Query(100.0, description="TP4 in pips"),
+    rr_tp1: Optional[float] = Query(None),
+    rr_tp2: Optional[float] = Query(None),
+    rr_tp3: Optional[float] = Query(None),
 ):
     """
     Mengambil data candlestick dan menjalankan YUZARE Indicator Engine.
@@ -127,7 +132,14 @@ def get_analysis(
     if not candles:
         return JSONResponse(status_code=502, content={"error": "Failed to fetch market data"})
 
-    result = engine.analyze(candles, rr_tp1=rr_tp1, rr_tp2=rr_tp2, rr_tp3=rr_tp3)
+    result = engine.analyze(
+        candles, 
+        sl_pips=sl_pips, 
+        tp1_pips=tp1_pips, 
+        tp2_pips=tp2_pips, 
+        tp3_pips=tp3_pips, 
+        tp4_pips=tp4_pips
+    )
     result["symbol"] = symbol
     result["timeframe"] = timeframe
     result["pair_info"] = PAIR_MAP[symbol]
