@@ -305,6 +305,144 @@ function getPipUnit(symbol, price) {
   return price > 500 ? 0.1 : 0.0001;
 }
 
+// Pure JS MT5 Confluence Indicator Helpers
+function calculateSMA(values, period = 9) {
+  const n = values.length;
+  const sma = [];
+  for (let i = 0; i < n; i++) {
+    const start = Math.max(0, i - period + 1);
+    const win = values.slice(start, i + 1);
+    sma.push(win.reduce((a, b) => a + b, 0) / win.length);
+  }
+  return sma;
+}
+
+function calculateBollingerBands(closes, period = 20, dev = 2.0) {
+  const n = closes.length;
+  const bbMid = [];
+  const bbUpper = [];
+  const bbLower = [];
+  for (let i = 0; i < n; i++) {
+    const start = Math.max(0, i - period + 1);
+    const win = closes.slice(start, i + 1);
+    const m = win.reduce((a, b) => a + b, 0) / win.length;
+    const variance = win.reduce((acc, x) => acc + Math.pow(x - m, 2), 0) / win.length;
+    const std = Math.sqrt(variance);
+    bbMid.push(m);
+    bbUpper.push(m + dev * std);
+    bbLower.push(m - dev * std);
+  }
+  return { mid: bbMid, upper: bbUpper, lower: bbLower };
+}
+
+function calculatePSAR(highs, lows, step = 0.02, maxStep = 0.20) {
+  const n = highs.length;
+  const sar = new Array(n).fill(0);
+  const trend = new Array(n).fill(1);
+  if (n < 2) return { sar, trend };
+
+  const isUp = highs[1] >= highs[0];
+  trend[0] = isUp ? 1 : -1;
+  trend[1] = trend[0];
+  let ep = isUp ? highs[0] : lows[0];
+  let af = step;
+  sar[0] = isUp ? lows[0] : highs[0];
+  sar[1] = sar[0];
+
+  for (let i = 2; i < n; i++) {
+    const prevSar = sar[i - 1];
+    if (trend[i - 1] === 1) {
+      let curSar = prevSar + af * (ep - prevSar);
+      curSar = Math.min(curSar, lows[i - 1], lows[i - 2]);
+      if (lows[i] < curSar) {
+        trend[i] = -1;
+        sar[i] = ep;
+        ep = lows[i];
+        af = step;
+      } else {
+        trend[i] = 1;
+        sar[i] = curSar;
+        if (highs[i] > ep) {
+          ep = highs[i];
+          af = Math.min(af + step, maxStep);
+        }
+      }
+    } else {
+      let curSar = prevSar + af * (ep - prevSar);
+      curSar = Math.max(curSar, highs[i - 1], highs[i - 2]);
+      if (highs[i] > curSar) {
+        trend[i] = 1;
+        sar[i] = ep;
+        ep = highs[i];
+        af = step;
+      } else {
+        trend[i] = -1;
+        sar[i] = curSar;
+        if (lows[i] < ep) {
+          ep = lows[i];
+          af = Math.min(af + step, maxStep);
+        }
+      }
+    }
+  }
+  return { sar, trend };
+}
+
+function calculateEMA(values, period) {
+  if (!values || values.length === 0) return [];
+  const ema = [];
+  const k = 2 / (period + 1);
+  let curr = values[0];
+  for (let i = 0; i < values.length; i++) {
+    if (i === 0) {
+      curr = values[0];
+    } else if (i < period) {
+      curr = (curr * i + values[i]) / (i + 1);
+    } else {
+      curr = values[i] * k + curr * (1 - k);
+    }
+    ema.push(curr);
+  }
+  return ema;
+}
+
+function calculateRSI(closes, period = 8) {
+  if (closes.length < 2) return new Array(closes.length).fill(50);
+  const gains = [];
+  const losses = [];
+  for (let i = 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    gains.push(Math.max(0, diff));
+    losses.push(Math.max(0, -diff));
+  }
+
+  const rsi = [50];
+  let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / Math.max(1, period);
+  let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / Math.max(1, period);
+
+  for (let i = 0; i < gains.length; i++) {
+    if (i < period) {
+      rsi.push(50);
+      continue;
+    }
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+    if (avgLoss === 0) {
+      rsi.push(100);
+    } else {
+      const rs = avgGain / avgLoss;
+      rsi.push(100 - (100 / (1 + rs)));
+    }
+  }
+  return rsi;
+}
+
+function calculateMACD(closes, fast = 12, slow = 26) {
+  const emaFast = calculateEMA(closes, fast);
+  const emaSlow = calculateEMA(closes, slow);
+  return emaFast.map((f, i) => f - emaSlow[i]);
+}
+
 // Client-Side Calculation Engine (For Standalone GitHub Pages Mode)
 function computeClientSideIndicators(candles) {
   const n = candles.length;
@@ -326,6 +464,18 @@ function computeClientSideIndicators(candles) {
     a = (a * 13 + trs[i]) / 14;
     atr.push(a);
   }
+
+  // 5 MT5 Confluence Indicators (User's Exact MT5 mobile setup):
+  // 1. Moving Average: SMA 9 (Metode Mudah / Tutup)
+  const sma9 = calculateSMA(closes, 9);
+  // 2. Bollinger Bands: Periode 20, Deviasi 2.0, Tutup
+  const bb = calculateBollingerBands(closes, 20, 2.0);
+  // 3. Parabolic SAR: Langkah 0.02, Maksimum 0.20
+  const psar = calculatePSAR(highs, lows, 0.02, 0.20);
+  // 4. RSI: Periode 8, Level 30 & 70, Tutup
+  const rsi8 = calculateRSI(closes, 8);
+  // 5. MACD: EMA Cepat 12, EMA Lambat 26, Signal SMA 1, Tutup
+  const macd = calculateMACD(closes, 12, 26);
 
   // Trend & QRR Bands
   const up_band = [];
@@ -372,7 +522,6 @@ function computeClientSideIndicators(candles) {
       if (lows[i] > lows[i - k] || lows[i] > lows[i + k]) isSL = false;
     }
     if (isSH && highs[i] > curPrice) {
-      // Periksa apakah candle setelah i pernah menembus highs[i]
       let penetrated = false;
       for (let m = i + 1; m < n; m++) {
         if (highs[m] >= highs[i]) { penetrated = true; break; }
@@ -380,13 +529,32 @@ function computeClientSideIndicators(candles) {
       if (!penetrated) raw_sh.push({ index: i, price: highs[i] });
     }
     if (isSL && lows[i] < curPrice) {
-      // Periksa apakah candle setelah i pernah menembus lows[i]
       let penetrated = false;
       for (let m = i + 1; m < n; m++) {
         if (lows[m] <= lows[i]) { penetrated = true; break; }
       }
       if (!penetrated) raw_sl.push({ index: i, price: lows[i] });
     }
+  }
+
+  // Fallback jika pasar breakout ekstrim sehingga swing belum terbentuk di atas/bawah harga
+  const roundStep = curPrice > 1000 ? 10.0 : 0.0050;
+  if (raw_sh.length === 0) {
+    const target1 = Math.ceil(curPrice / roundStep) * roundStep;
+    const p1 = target1 > curPrice ? target1 : curPrice + roundStep;
+    raw_sh.push({ index: n - 1, price: p1 });
+    raw_sh.push({ index: n - 1, price: p1 + roundStep });
+  } else if (raw_sh.length === 1) {
+    raw_sh.push({ index: n - 1, price: raw_sh[0].price + roundStep });
+  }
+
+  if (raw_sl.length === 0) {
+    const target1 = Math.floor(curPrice / roundStep) * roundStep;
+    const p1 = target1 < curPrice ? target1 : curPrice - roundStep;
+    raw_sl.push({ index: n - 1, price: p1 });
+    raw_sl.push({ index: n - 1, price: p1 - roundStep });
+  } else if (raw_sl.length === 1) {
+    raw_sl.push({ index: n - 1, price: raw_sl[0].price - roundStep });
   }
 
   // Ambil maksimal 2 level terdekat agar chart tetap bersih
@@ -413,19 +581,58 @@ function computeClientSideIndicators(candles) {
     });
   });
 
-  // Signals
+  // Signals (Zero-Repaint dengan Confluence 5 Indikator MT5)
   const signals = [];
   const buy_trades = [];
   const sell_trades = [];
   let lastBuy = -999, lastSell = -999;
+  const cooldown = 4;
 
-  for (let i = 15; i < n; i++) {
-    const isUp = trend[i] === 1 && (trend[i - 1] === -1 || closes[i] > closes[i - 1]);
-    const isDn = trend[i] === -1 && (trend[i - 1] === 1 || closes[i] < closes[i - 1]);
+  for (let i = 20; i < n; i++) {
+    const curAtr = atr[i] > 0 ? atr[i] : 1.0;
+
+    // 1. Moving Average SMA 9 Filter (Tutup)
+    const sma9Bull = closes[i] >= sma9[i];
+    const sma9Bear = closes[i] <= sma9[i];
+
+    // 2. Parabolic SAR Filter (0.02, 0.20)
+    const sarBull = psar.trend[i] === 1;
+    const sarBear = psar.trend[i] === -1;
+    const sarFlipBull = psar.trend[i] === 1 && psar.trend[i - 1] === -1;
+    const sarFlipBear = psar.trend[i] === -1 && psar.trend[i - 1] === 1;
+
+    // 3. Bollinger Bands Filter (20, 2.0 Tutup)
+    const bbBull = (closes[i] <= bb.upper[i] + 0.15 * curAtr) && (closes[i] >= bb.lower[i]);
+    const bbBear = (closes[i] >= bb.lower[i] - 0.15 * curAtr) && (closes[i] <= bb.upper[i]);
+
+    // 4. RSI 8 Filter (Level 30 & 70 Tutup)
+    const rsiBull = (32 <= rsi8[i] && rsi8[i] <= 78) && (rsi8[i] >= rsi8[i - 1] - 3.0 || rsi8[i] >= 48);
+    const rsiBear = (22 <= rsi8[i] && rsi8[i] <= 68) && (rsi8[i] <= rsi8[i - 1] + 3.0 || rsi8[i] <= 52);
+
+    // 5. MACD Filter (12, 26, Signal SMA 1)
+    const macdBull = (macd[i] >= macd[i - 1]) || (macd[i] > 0);
+    const macdBear = (macd[i] <= macd[i - 1]) || (macd[i] < 0);
+
+    // Core YUZARE Triggers
+    const isTrendFlipUp = trend[i] === 1 && trend[i - 1] === -1;
+    const isPullbackBuy = trend[i] === 1 && closes[i] > candles[i].open && lows[i] <= up_band[i] + 0.35 * curAtr && closes[i] > closes[i - 1];
+    const isBreakoutBuy = trend[i] === 1 && closes[i] > Math.max(closes[i - 1], closes[i - 2]) && (closes[i] - candles[i].open) > 0.25 * curAtr;
+    const buyTrigger = isTrendFlipUp || isPullbackBuy || isBreakoutBuy || sarFlipBull;
+
+    // BUY Confluence: Candle hijau + SMA9/SAR konfirmasi + BB dalam rentang + RSI 8 momentum + MACD naik
+    const buyCond = (closes[i] > candles[i].open) && (sma9Bull || sarBull) && bbBull && rsiBull && macdBull && buyTrigger;
+
+    const isTrendFlipDn = trend[i] === -1 && trend[i - 1] === 1;
+    const isPullbackSell = trend[i] === -1 && closes[i] < candles[i].open && highs[i] >= dn_band[i] - 0.35 * curAtr && closes[i] < closes[i - 1];
+    const isBreakoutSell = trend[i] === -1 && closes[i] < Math.min(closes[i - 1], closes[i - 2]) && (candles[i].open - closes[i]) > 0.25 * curAtr;
+    const sellTrigger = isTrendFlipDn || isPullbackSell || isBreakoutSell || sarFlipBear;
+
+    // SELL Confluence: Candle merah + SMA9/SAR konfirmasi + BB dalam rentang + RSI 8 momentum + MACD turun
+    const sellCond = (closes[i] < candles[i].open) && (sma9Bear || sarBear) && bbBear && rsiBear && macdBear && sellTrigger;
 
     const tpList = (state.tp_targets && state.tp_targets.length > 0) ? state.tp_targets : [30, 50, 70, 100];
 
-    if (isUp && closes[i] > candles[i].open && i - lastBuy >= 5) {
+    if (buyCond && i - lastBuy >= cooldown) {
       lastBuy = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
@@ -487,7 +694,7 @@ function computeClientSideIndicators(candles) {
       signals.push({ time: candles[i].time, type: 'BUY', position: 'belowBar', color: '#00C853', shape: 'arrowUp', text: 'buy', price: candles[i].low, details: trade });
     }
 
-    if (isDn && closes[i] < candles[i].open && i - lastSell >= 5) {
+    if (sellCond && i - lastSell >= cooldown) {
       lastSell = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
@@ -560,6 +767,17 @@ function computeClientSideIndicators(candles) {
   const totalDecided = tpHits.length + slHits.length;
   const winRate = totalDecided > 0 ? Math.round((tpHits.length / totalDecided) * 1000) / 10 : 0;
 
+  const mt5Indicators = {
+    sma9: Math.round(sma9[n - 1] * 100) / 100,
+    bb_upper: Math.round(bb.upper[n - 1] * 100) / 100,
+    bb_mid: Math.round(bb.mid[n - 1] * 100) / 100,
+    bb_lower: Math.round(bb.lower[n - 1] * 100) / 100,
+    sar: Math.round(psar.sar[n - 1] * 100) / 100,
+    sar_trend: psar.trend[n - 1] === 1 ? 'BULLISH' : 'BEARISH',
+    rsi8: Math.round(rsi8[n - 1] * 100) / 100,
+    macd: Math.round(macd[n - 1] * 100) / 100,
+  };
+
   return {
     candles: colored,
     signals,
@@ -567,12 +785,14 @@ function computeClientSideIndicators(candles) {
     latest_buy: activeBuys.length > 0 ? activeBuys[activeBuys.length - 1] : (buy_trades.length > 0 ? buy_trades[buy_trades.length - 1] : null),
     latest_sell: activeSells.length > 0 ? activeSells[activeSells.length - 1] : (sell_trades.length > 0 ? sell_trades[sell_trades.length - 1] : null),
     current_price: curPrice,
+    indicators: mt5Indicators,
     stats: {
       total_signals: signals.length,
       completed_trades: totalDecided,
       win_rate: winRate,
       tp_hits: tpHits.length,
       sl_hits: slHits.length,
+      indicators: mt5Indicators,
     },
   };
 }
