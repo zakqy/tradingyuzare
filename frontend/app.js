@@ -181,6 +181,24 @@ function initChart() {
     },
   });
 
+  // Automatic Responsive ResizeObserver: handles browser zoom in/out (100% <-> 90%) and viewport changes
+  if (window.ResizeObserver) {
+    const resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0 && state.chart) {
+          state.chart.applyOptions({
+            width: Math.floor(width),
+            height: Math.floor(height),
+          });
+          renderPendingZonesOverlay();
+          renderSignalBadges();
+        }
+      }
+    });
+    resizeObserver.observe(container);
+  }
+
   window.addEventListener('resize', () => {
     const isDesktop = window.innerWidth > 960;
     const sidebarEl = document.querySelector('.sidebar');
