@@ -303,7 +303,7 @@ function computeClientSideIndicators(candles) {
     pending_zones.push({
       id: `ps_${sh.index}`,
       type: 'pending_sell',
-      label: 'pending sell',
+      label: 'SELL LIMIT',
       price: Math.round(sh.price * 100) / 100,
       distance_pips: Math.round((sh.price - curPrice) * 10),
     });
@@ -313,7 +313,7 @@ function computeClientSideIndicators(candles) {
     pending_zones.push({
       id: `pb_${sl.index}`,
       type: 'pending_buy',
-      label: 'pending buy',
+      label: 'BUY LIMIT',
       price: Math.round(sl.price * 100) / 100,
       distance_pips: Math.round((curPrice - sl.price) * 10),
     });
@@ -452,8 +452,8 @@ function computeClientSideIndicators(candles) {
     candles: colored,
     signals,
     pending_zones,
-    latest_buy: activeBuys.length > 0 ? activeBuys[activeBuys.length - 1] : null,
-    latest_sell: activeSells.length > 0 ? activeSells[activeSells.length - 1] : null,
+    latest_buy: activeBuys.length > 0 ? activeBuys[activeBuys.length - 1] : (buy_trades.length > 0 ? buy_trades[buy_trades.length - 1] : null),
+    latest_sell: activeSells.length > 0 ? activeSells[activeSells.length - 1] : (sell_trades.length > 0 ? sell_trades[sell_trades.length - 1] : null),
     current_price: curPrice,
     stats: {
       total_signals: signals.length,
@@ -551,7 +551,11 @@ async function refreshSignalsSilently() {
     const data = computeClientSideIndicators(state.candles);
     applyMarkers(data.signals);
     state.pendingZones = data.pending_zones;
+    state.activeBuy = data.latest_buy;
+    state.activeSell = data.latest_sell;
     renderPendingZonesOverlay();
+    renderTPSLLines();
+    updateSidebar(data);
   } catch (e) {
     console.warn('Silent refresh error:', e);
   }
@@ -594,16 +598,16 @@ function applyMarkers(signals) {
   renderSignalBadges();
 }
 
-// Pending Zones Overlay (Hanya tampilkan floating tags di area kanan tanpa garis melintang)
+// Pending Zones Overlay & Price Lines (Garis BUY LIMIT & SELL LIMIT pada Chart & Axis Harga)
 function renderPendingZonesOverlay() {
   const overlay = document.getElementById('pending-zones-overlay');
-  if (!overlay || !state.candleSeries) return;
-  overlay.innerHTML = '';
+  if (!state.candleSeries) return;
+  if (overlay) overlay.innerHTML = '';
 
-  // Hapus semua garis horizontal lama agar chart tidak dipenuhi garis
+  // 1. Bersihkan semua garis pending lama
   if (state.pendingPriceLines) {
     state.pendingPriceLines.forEach(line => {
-      try { state.candleSeries.removePriceLine(line); } catch(e) {}
+      try { state.candleSeries.removePriceLine(line); } catch (e) {}
     });
   }
   state.pendingPriceLines = [];
@@ -618,45 +622,78 @@ function renderPendingZonesOverlay() {
 
   const curPrice = state.lastPrice || (state.candles.length > 0 ? state.candles[state.candles.length - 1].close : 0);
 
-  // Filter: Hilangkan jika harga saat ini sudah mencapai/menyentuh pending level (Hit BUY/SELL LIMIT)
-  const activeZones = state.pendingZones.filter(zone => {
-    if (zone.type === 'pending_sell' && curPrice >= zone.price) return false;
-    if (zone.type === 'pending_buy' && curPrice <= zone.price) return false;
-    return true;
-  });
+  // 2. Filter: Hilangkan jika harga saat ini sudah mencapai/menyentuh pending level (Hit SELL LIMIT / BUY LIMIT)
+  const activeSellLimits = state.pendingZones
+    .filter(z => z.type === 'pending_sell' && curPrice < z.price)
+    .sort((a, b) => a.price - b.price)
+    .slice(0, 2);
 
-  // Tampilkan hanya floating tags di area kanan (seperti di TradingView)
+  const activeBuyLimits = state.pendingZones
+    .filter(z => z.type === 'pending_buy' && curPrice > z.price)
+    .sort((a, b) => b.price - a.price)
+    .slice(0, 2);
+
+  const activeZones = [...activeSellLimits, ...activeBuyLimits];
+
+  // 3. Render garis horizontal dashed dan badge label pada axis harga kanan chart
   activeZones.forEach(zone => {
-    const yCoord = state.candleSeries.priceToCoordinate(zone.price);
-    if (yCoord !== null && yCoord >= 15 && yCoord <= overlay.clientHeight - 15) {
-      const tag = document.createElement('div');
-      tag.className = `zone-tag ${zone.type.replace('_', '-')}`;
-      tag.style.top = `${yCoord}px`;
-      tag.innerHTML = `<span>${zone.label}</span> <span style="opacity: 0.85; font-size: 10px; font-weight: 600;">${zone.price.toFixed(2)}</span>`;
-      overlay.appendChild(tag);
+    const isSell = zone.type === 'pending_sell';
+    const color = isSell ? '#ff5252' : '#00c853';
+    const title = isSell ? 'SELL LIMIT' : 'BUY LIMIT';
+
+    try {
+      const pLine = state.candleSeries.createPriceLine({
+        price: zone.price,
+        color: color,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: title,
+      });
+      state.pendingPriceLines.push(pLine);
+    } catch (e) {
+      console.warn('Error creating pending price line:', e);
+    }
+
+    // 4. Floating tag di chart canvas overlay
+    if (overlay) {
+      const yCoord = state.candleSeries.priceToCoordinate(zone.price);
+      if (yCoord !== null && yCoord >= 15 && yCoord <= overlay.clientHeight - 15) {
+        const tag = document.createElement('div');
+        tag.className = `zone-tag ${zone.type.replace('_', '-')}`;
+        tag.style.top = `${yCoord}px`;
+        tag.innerHTML = `<span>${title}</span> <span style="opacity: 0.85; font-size: 10px; font-weight: 600;">${zone.price.toFixed(2)}</span>`;
+        overlay.appendChild(tag);
+      }
     }
   });
 
-  const pzList = document.getElementById('pending-zones-list');
+  // 5. Update list pending zones di sidebar
   const countLabel = document.getElementById('pending-count-label');
   if (countLabel) countLabel.textContent = `${activeZones.length} Level Aktif`;
 
+  const pzList = document.getElementById('pending-zones-list');
   if (pzList) {
-    pzList.innerHTML = activeZones.map(z => {
-      const isSell = z.type === 'pending_sell';
-      const color = isSell ? 'var(--sell-red)' : 'var(--buy-green)';
-      const bg = isSell ? 'rgba(213, 0, 0, 0.12)' : 'rgba(0, 200, 83, 0.12)';
-      const badgeText = isSell ? 'SELL LIMIT' : 'BUY LIMIT';
-      return `
-        <div style="display: flex; justify-content: space-between; align-items: center; background: ${bg}; padding: 6px 8px; border-radius: 4px; border-left: 3px solid ${color}; margin-bottom: 4px;">
-          <div>
-            <span style="font-weight: 700; color: ${color}; font-size: 10px;">${badgeText}</span>
-            <span style="font-family: var(--font-mono); font-weight: 700; margin-left: 6px;">${z.price.toFixed(2)}</span>
+    if (activeZones.length === 0) {
+      pzList.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 10px;">Semua level pending telah tersentuh / selesai.</div>';
+    } else {
+      pzList.innerHTML = activeZones.map(z => {
+        const isSell = z.type === 'pending_sell';
+        const color = isSell ? 'var(--sell-red)' : 'var(--buy-green)';
+        const bg = isSell ? 'rgba(213, 0, 0, 0.12)' : 'rgba(0, 200, 83, 0.12)';
+        const badgeText = isSell ? 'SELL LIMIT' : 'BUY LIMIT';
+        const dist = Math.round(Math.abs(z.price - curPrice) * 10);
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: ${bg}; padding: 6px 8px; border-radius: 4px; border-left: 3px solid ${color}; margin-bottom: 4px;">
+            <div>
+              <span style="font-weight: 700; color: ${color}; font-size: 10px;">${badgeText}</span>
+              <span style="font-family: var(--font-mono); font-weight: 700; margin-left: 6px;">${z.price.toFixed(2)}</span>
+            </div>
+            <span style="color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px;">${dist > 0 ? '+' : ''}${dist} pips</span>
           </div>
-          <span style="color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px;">${z.distance_pips > 0 ? '+' : ''}${z.distance_pips} pips</span>
-        </div>
-      `;
-    }).join('');
+        `;
+      }).join('');
+    }
   }
 }
 
@@ -664,73 +701,85 @@ function renderPendingZonesOverlay() {
 function renderTPSLLines() {
   if (state.tpslLines) {
     state.tpslLines.forEach(line => {
-      try { state.candleSeries.removePriceLine(line); } catch(e) {}
+      try { state.candleSeries.removePriceLine(line); } catch (e) {}
     });
   }
   state.tpslLines = [];
 
   const addLine = (price, title, color, style = LightweightCharts.LineStyle.Dashed, width = 1) => {
-    if (!price) return;
-    const l = state.candleSeries.createPriceLine({
-      price,
-      color,
-      lineWidth: width,
-      lineStyle: style,
-      axisLabelVisible: true,
-      title
-    });
-    state.tpslLines.push(l);
+    if (!price || !state.candleSeries) return;
+    try {
+      const l = state.candleSeries.createPriceLine({
+        price,
+        color,
+        lineWidth: width,
+        lineStyle: style,
+        axisLabelVisible: true,
+        title
+      });
+      state.tpslLines.push(l);
+    } catch (e) {
+      console.warn('Error adding price line:', e);
+    }
   };
 
-  // Posisi BUY aktif
-  if (state.activeBuy && !state.activeBuy.is_closed && state.activeBuy.status !== 'SL HIT' && state.activeBuy.status !== 'TP4 HIT 🎯') {
+  // Posisi BUY (Hanya garis level yang belum hit yang ditampilkan)
+  if (state.activeBuy) {
     const b = state.activeBuy;
-    addLine(b.entry, 'BUY Entry', '#90caf9', LightweightCharts.LineStyle.Dotted, 1);
+    const hasRemainingLevels = !b.tp1_hit || !b.tp2_hit || !b.tp3_hit || !b.tp4_hit || !b.sl_hit;
+
+    if (hasRemainingLevels) {
+      addLine(b.entry, 'BUY Entry', '#90caf9', LightweightCharts.LineStyle.Dotted, 1);
+    }
     
-    // Jika SL belum kena, tampilkan garis SL (30p)
+    // Jika SL belum kena, tampilkan garis SL (30p). Jika sudah hit -> otomatis dihilangkan!
     if (!b.sl_hit) {
       addLine(b.sl, `BUY SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP1 sudah hit -> garis TP1 otomatis dihilangkan!
+    // Jika TP1 belum hit -> tampilkan garis TP1 (30p). Jika sudah hit -> otomatis dihilangkan!
     if (!b.tp1_hit) {
       addLine(b.tp1, `BUY TP1 (${state.tp1_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP2 sudah hit -> garis TP2 otomatis dihilangkan!
+    // Jika TP2 belum hit -> tampilkan garis TP2 (50p). Jika sudah hit -> otomatis dihilangkan!
     if (!b.tp2_hit) {
       addLine(b.tp2, `BUY TP2 (${state.tp2_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP3 sudah hit -> garis TP3 otomatis dihilangkan!
+    // Jika TP3 belum hit -> tampilkan garis TP3 (70p). Jika sudah hit -> otomatis dihilangkan!
     if (!b.tp3_hit) {
       addLine(b.tp3, `BUY TP3 (${state.tp3_pips}p)`, '#00c853', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP4 belum hit -> tampilkan TP4 (100p)
+    // Jika TP4 belum hit -> tampilkan TP4 (100p). Jika sudah hit -> otomatis dihilangkan!
     if (!b.tp4_hit) {
       addLine(b.tp4, `BUY TP4 (${state.tp4_pips}p)`, '#00c853', LightweightCharts.LineStyle.Solid, 2);
     }
   }
 
-  // Posisi SELL aktif
-  if (state.activeSell && !state.activeSell.is_closed && state.activeSell.status !== 'SL HIT' && state.activeSell.status !== 'TP4 HIT 🎯') {
+  // Posisi SELL (Hanya garis level yang belum hit yang ditampilkan)
+  if (state.activeSell) {
     const s = state.activeSell;
-    addLine(s.entry, 'SELL Entry', '#ce93d8', LightweightCharts.LineStyle.Dotted, 1);
+    const hasRemainingLevels = !s.tp1_hit || !s.tp2_hit || !s.tp3_hit || !s.tp4_hit || !s.sl_hit;
+
+    if (hasRemainingLevels) {
+      addLine(s.entry, 'SELL Entry', '#ce93d8', LightweightCharts.LineStyle.Dotted, 1);
+    }
     
-    // Jika SL belum kena, tampilkan garis SL (30p)
+    // Jika SL belum kena, tampilkan garis SL (30p). Jika sudah hit -> otomatis dihilangkan!
     if (!s.sl_hit) {
       addLine(s.sl, `SELL SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP1 sudah hit -> garis TP1 otomatis dihilangkan!
+    // Jika TP1 belum hit -> tampilkan garis TP1 (30p). Jika sudah hit -> otomatis dihilangkan!
     if (!s.tp1_hit) {
       addLine(s.tp1, `SELL TP1 (${state.tp1_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP2 sudah hit -> garis TP2 otomatis dihilangkan!
+    // Jika TP2 belum hit -> tampilkan garis TP2 (50p). Jika sudah hit -> otomatis dihilangkan!
     if (!s.tp2_hit) {
       addLine(s.tp2, `SELL TP2 (${state.tp2_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP3 sudah hit -> garis TP3 otomatis dihilangkan!
+    // Jika TP3 belum hit -> tampilkan garis TP3 (70p). Jika sudah hit -> otomatis dihilangkan!
     if (!s.tp3_hit) {
       addLine(s.tp3, `SELL TP3 (${state.tp3_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Dashed, 1);
     }
-    // Jika TP4 belum hit -> tampilkan TP4 (100p)
+    // Jika TP4 belum hit -> tampilkan TP4 (100p). Jika sudah hit -> otomatis dihilangkan!
     if (!s.tp4_hit) {
       addLine(s.tp4, `SELL TP4 (${state.tp4_pips}p)`, '#ff1744', LightweightCharts.LineStyle.Solid, 2);
     }
@@ -833,7 +882,7 @@ function applyPriceTick(price) {
 function updateSidebarPrice(currentPrice) {
   // Real-time Target Hit Check: langsung hapus garis jika sudah hit TP / SL / Pending Limit
   let needsTPSLRedraw = false;
-  if (state.activeBuy && !state.activeBuy.is_closed) {
+  if (state.activeBuy) {
     if (currentPrice >= state.activeBuy.tp1 && !state.activeBuy.tp1_hit) {
       state.activeBuy.tp1_hit = true;
       needsTPSLRedraw = true;
@@ -846,21 +895,20 @@ function updateSidebarPrice(currentPrice) {
       state.activeBuy.tp3_hit = true;
       needsTPSLRedraw = true;
     }
-    if (currentPrice >= state.activeBuy.tp4) {
+    if (currentPrice >= state.activeBuy.tp4 && !state.activeBuy.tp4_hit) {
       state.activeBuy.tp4_hit = true;
       state.activeBuy.is_closed = true;
       state.activeBuy.status = 'TP4 HIT 🎯';
       needsTPSLRedraw = true;
     }
-    if (currentPrice <= state.activeBuy.sl) {
+    if (currentPrice <= state.activeBuy.sl && !state.activeBuy.sl_hit) {
       state.activeBuy.sl_hit = true;
-      state.activeBuy.is_closed = true;
       state.activeBuy.status = 'SL HIT';
       needsTPSLRedraw = true;
     }
   }
 
-  if (state.activeSell && !state.activeSell.is_closed) {
+  if (state.activeSell) {
     if (currentPrice <= state.activeSell.tp1 && !state.activeSell.tp1_hit) {
       state.activeSell.tp1_hit = true;
       needsTPSLRedraw = true;
@@ -873,15 +921,14 @@ function updateSidebarPrice(currentPrice) {
       state.activeSell.tp3_hit = true;
       needsTPSLRedraw = true;
     }
-    if (currentPrice <= state.activeSell.tp4) {
+    if (currentPrice <= state.activeSell.tp4 && !state.activeSell.tp4_hit) {
       state.activeSell.tp4_hit = true;
       state.activeSell.is_closed = true;
       state.activeSell.status = 'TP4 HIT 🎯';
       needsTPSLRedraw = true;
     }
-    if (currentPrice >= state.activeSell.sl) {
+    if (currentPrice >= state.activeSell.sl && !state.activeSell.sl_hit) {
       state.activeSell.sl_hit = true;
-      state.activeSell.is_closed = true;
       state.activeSell.status = 'SL HIT';
       needsTPSLRedraw = true;
     }
@@ -889,6 +936,30 @@ function updateSidebarPrice(currentPrice) {
 
   if (needsTPSLRedraw) {
     renderTPSLLines();
+    if (state.activeBuy) {
+      const bBadge = document.getElementById('buy-status-badge');
+      if (bBadge) bBadge.textContent = state.activeBuy.status || 'ACTIVE';
+      const elTp1 = document.getElementById('buy-target-tp1');
+      const elTp2 = document.getElementById('buy-target-tp2');
+      const elTp3 = document.getElementById('buy-target-tp3');
+      const elTp4 = document.getElementById('buy-target-tp4');
+      if (elTp1) elTp1.classList.toggle('hit', !!state.activeBuy.tp1_hit);
+      if (elTp2) elTp2.classList.toggle('hit', !!state.activeBuy.tp2_hit);
+      if (elTp3) elTp3.classList.toggle('hit', !!state.activeBuy.tp3_hit);
+      if (elTp4) elTp4.classList.toggle('hit', !!state.activeBuy.tp4_hit);
+    }
+    if (state.activeSell) {
+      const sBadge = document.getElementById('sell-status-badge');
+      if (sBadge) sBadge.textContent = state.activeSell.status || 'ACTIVE';
+      const elTp1 = document.getElementById('sell-target-tp1');
+      const elTp2 = document.getElementById('sell-target-tp2');
+      const elTp3 = document.getElementById('sell-target-tp3');
+      const elTp4 = document.getElementById('sell-target-tp4');
+      if (elTp1) elTp1.classList.toggle('hit', !!state.activeSell.tp1_hit);
+      if (elTp2) elTp2.classList.toggle('hit', !!state.activeSell.tp2_hit);
+      if (elTp3) elTp3.classList.toggle('hit', !!state.activeSell.tp3_hit);
+      if (elTp4) elTp4.classList.toggle('hit', !!state.activeSell.tp4_hit);
+    }
   }
 
   // Real-time Pending Limit Check: langsung hapus badge jika harga sudah menyentuh level

@@ -216,7 +216,7 @@ class YUZARE_Engine:
             pending_zones.append({
                 "id": f"ps_{sh['index']}",
                 "type": "pending_sell",
-                "label": "pending sell",
+                "label": "SELL LIMIT",
                 "price": round(sh["price"], 2),
                 "zone_low": round(sh["zone_bound"], 2),
                 "zone_high": round(sh["price"], 2),
@@ -228,7 +228,7 @@ class YUZARE_Engine:
             pending_zones.append({
                 "id": f"pb_{sl['index']}",
                 "type": "pending_buy",
-                "label": "pending buy",
+                "label": "BUY LIMIT",
                 "price": round(sl["price"], 2),
                 "zone_low": round(sl["price"], 2),
                 "zone_high": round(sl["zone_bound"], 2),
@@ -468,8 +468,8 @@ class YUZARE_Engine:
             "active_sell_count": len(active_sell_trades)
         }
 
-        latest_buy = active_buy_trades[-1] if active_buy_trades else None
-        latest_sell = active_sell_trades[-1] if active_sell_trades else None
+        latest_buy = active_buy_trades[-1] if active_buy_trades else (buy_trades[-1] if buy_trades else None)
+        latest_sell = active_sell_trades[-1] if active_sell_trades else (sell_trades[-1] if sell_trades else None)
 
         return {
             "candles": colored_candles,
