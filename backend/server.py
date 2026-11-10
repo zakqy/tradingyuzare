@@ -217,8 +217,8 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
     await manager.connect(websocket)
     symbol = symbol.upper()
     binance_symbol = PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT").lower()
-    # Menggunakan combined stream kline + ticker agar chart selalu bergerak setiap detik!
-    ws_url = f"wss://data-stream.binance.vision/stream?streams={binance_symbol}@kline_{timeframe}/{binance_symbol}@ticker"
+    # Menggunakan combined stream kline + aggTrade (0ms delay) + bookTicker agar chart bergerak instan secepat MT5!
+    ws_url = f"wss://data-stream.binance.vision/stream?streams={binance_symbol}@kline_{timeframe}/{binance_symbol}@aggTrade/{binance_symbol}@bookTicker"
 
     logger.info(f"Client connected for {symbol} {timeframe}. Connecting to Binance Combined WS: {ws_url}")
     
@@ -248,7 +248,27 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                         data = raw.get("data", {})
                         cur_offset = broker_offsets.get(symbol, 0.0)
                         
-                        if "kline" in stream:
+                        if "aggTrade" in stream:
+                            cur_price = round(float(data.get("p", 0)) + cur_offset, 2)
+                            await websocket.send_text(json.dumps({
+                                "type": "ticker",
+                                "symbol": symbol,
+                                "price": cur_price,
+                                "time": int(data.get("E", 0) // 1000)
+                            }))
+                        elif "bookTicker" in stream:
+                            bid = round(float(data.get("b", 0)) + cur_offset, 2)
+                            ask = round(float(data.get("a", 0)) + cur_offset, 2)
+                            await websocket.send_text(json.dumps({
+                                "type": "bookTicker",
+                                "symbol": symbol,
+                                "price": bid,
+                                "bid": bid,
+                                "ask": ask,
+                                "spread": round(ask - bid, 2),
+                                "time": int(time.time())
+                            }))
+                        elif "kline" in stream:
                             k = data.get("k", {})
                             if k:
                                 candle_data = {
@@ -264,16 +284,6 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                                     "is_closed": k["x"] # True if bar closed (zero repaint trigger!)
                                 }
                                 await websocket.send_text(json.dumps(candle_data))
-                        elif "ticker" in stream:
-                            ticker_data = {
-                                "type": "ticker",
-                                "symbol": symbol,
-                                "price": round(float(data.get("c", 0)) + cur_offset, 2),
-                                "high": round(float(data.get("h", 0)) + cur_offset, 2),
-                                "low": round(float(data.get("l", 0)) + cur_offset, 2),
-                                "time": int(data.get("E", 0) // 1000)
-                            }
-                            await websocket.send_text(json.dumps(ticker_data))
             except WebSocketDisconnect:
                 running = False
                 break

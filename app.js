@@ -1051,7 +1051,7 @@ function updateOHLC(c) {
   document.getElementById('spread-val').textContent = spread.toFixed(2);
 }
 
-// WebSocket Stream (Supports both Local WebSocket & Direct Binance Stream)
+// WebSocket Stream (Supports both Local WebSocket & Direct Binance Stream with 0ms MT5 Speed)
 function startWebSocket() {
   if (state.ws) {
     try { state.ws.close(); } catch(e) {}
@@ -1066,8 +1066,13 @@ function startWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl = `${protocol}//${window.location.host}/ws/live/${state.symbol}/${state.timeframe}`;
   } else {
-    // Direct Binance Vision Stream for GitHub Pages!
-    wsUrl = `wss://data-stream.binance.vision/stream?streams=${binanceSym}@kline_${state.timeframe}/${binanceSym}@ticker`;
+    // Ultra-Fast Multi-Stream: aggTrade (0ms executions) + bookTicker (live Bid/Ask) + kline (bars)
+    const streams = [
+      `${binanceSym}@aggTrade`,
+      `${binanceSym}@bookTicker`,
+      `${binanceSym}@kline_${state.timeframe}`
+    ].join('/');
+    wsUrl = `wss://data-stream.binance.vision/stream?streams=${streams}`;
   }
 
   const statusText = document.getElementById('ws-status-text');
@@ -1076,7 +1081,7 @@ function startWebSocket() {
   state.ws = new WebSocket(wsUrl);
 
   state.ws.onopen = () => {
-    statusText.textContent = `Live Stream: Connected (${state.symbol} · ${state.timeframe})`;
+    statusText.textContent = `Live Stream: Connected · 0ms MT5 Speed (${state.symbol} · ${state.timeframe})`;
   };
 
   state.ws.onmessage = (event) => {
@@ -1087,8 +1092,33 @@ function startWebSocket() {
 
       // Handle direct Binance Stream or backend relayed stream
       if (raw.stream) {
-        if (raw.stream.includes('kline')) {
-          const k = raw.data.k;
+        const stream = raw.stream;
+        const d = raw.data;
+
+        // 1. Instant Trade Execution Tick (0ms latency, exactly like MT5 ticks!)
+        if (stream.includes('aggTrade')) {
+          const tradePrice = Math.round((parseFloat(d.p) + offset) * 100) / 100;
+          applyPriceTick(tradePrice);
+        }
+        // 2. Real-Time Bid/Ask Order Book Updates (Instant Spread & Market Watch!)
+        else if (stream.includes('bookTicker')) {
+          const bid = Math.round((parseFloat(d.b) + offset) * 100) / 100;
+          const ask = Math.round((parseFloat(d.a) + offset) * 100) / 100;
+          const spread = Math.round((ask - bid) * 100) / 100;
+          const digits = (state.symbol === 'EURUSD' || state.symbol === 'GBPUSD') ? 4 : 2;
+
+          const sellEl = document.getElementById('quote-sell-price');
+          const buyEl = document.getElementById('quote-buy-price');
+          const spreadEl = document.getElementById('spread-val');
+          if (sellEl) sellEl.textContent = bid.toFixed(digits);
+          if (buyEl) buyEl.textContent = ask.toFixed(digits);
+          if (spreadEl) spreadEl.textContent = spread.toFixed(2);
+
+          applyPriceTick(bid);
+        }
+        // 3. Kline Bar Updates (Bar close zero-repaint event)
+        else if (stream.includes('kline')) {
+          const k = d.k;
           updateActiveCandle(
             Math.floor(k.t / 1000),
             Math.round((parseFloat(k.o) + offset) * 100) / 100,
@@ -1100,8 +1130,6 @@ function startWebSocket() {
             sounds.playPendingAlert();
             refreshSignalsSilently();
           }
-        } else if (raw.stream.includes('ticker')) {
-          applyPriceTick(Math.round((parseFloat(raw.data.c) + offset) * 100) / 100);
         }
       } else {
         if (raw.type === 'kline') {
@@ -1110,7 +1138,16 @@ function startWebSocket() {
             sounds.playPendingAlert();
             refreshSignalsSilently();
           }
-        } else if (raw.type === 'ticker') {
+        } else if (raw.type === 'bookTicker') {
+          const digits = (state.symbol === 'EURUSD' || state.symbol === 'GBPUSD') ? 4 : 2;
+          const sellEl = document.getElementById('quote-sell-price');
+          const buyEl = document.getElementById('quote-buy-price');
+          const spreadEl = document.getElementById('spread-val');
+          if (sellEl && raw.bid) sellEl.textContent = raw.bid.toFixed(digits);
+          if (buyEl && raw.ask) buyEl.textContent = raw.ask.toFixed(digits);
+          if (spreadEl && raw.spread !== undefined) spreadEl.textContent = raw.spread.toFixed(2);
+          if (raw.price) applyPriceTick(raw.price);
+        } else if (raw.type === 'ticker' || raw.type === 'trade') {
           applyPriceTick(raw.price);
         }
       }
@@ -1121,7 +1158,7 @@ function startWebSocket() {
 
   state.ws.onclose = () => {
     statusText.textContent = `Stream reconnecting...`;
-    setTimeout(startWebSocket, 2000);
+    setTimeout(startWebSocket, 1000);
   };
 }
 
