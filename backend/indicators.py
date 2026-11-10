@@ -181,12 +181,29 @@ class YUZARE_Engine:
         current_price = closes[-1]
         pip_unit = 0.1 if current_price > 1000 else 0.0001
 
-        # Pending Sell levels above current price
-        recent_sh = sorted([s for s in swing_highs[-20:] if s["price"] > current_price], key=lambda x: x["price"])
-        # Pending Buy levels below current price
-        recent_sl = sorted([s for s in swing_lows[-20:] if s["price"] < current_price], key=lambda x: x["price"], reverse=True)
+        # Hanya ambil Pending Zones yang belum pernah tersentuh / tertembus oleh candle setelahnya
+        untouched_sh = []
+        for sh in swing_highs:
+            if sh["price"] <= current_price:
+                continue
+            idx = sh["index"]
+            penetrated = any(highs[k] >= sh["price"] for k in range(idx + 1, n))
+            if not penetrated:
+                untouched_sh.append(sh)
 
-        for sh in recent_sh[:4]:
+        untouched_sl = []
+        for sl in swing_lows:
+            if sl["price"] >= current_price:
+                continue
+            idx = sl["index"]
+            penetrated = any(lows[k] <= sl["price"] for k in range(idx + 1, n))
+            if not penetrated:
+                untouched_sl.append(sl)
+
+        recent_sh = sorted(untouched_sh, key=lambda x: x["price"])[:2]
+        recent_sl = sorted(untouched_sl, key=lambda x: x["price"], reverse=True)[:2]
+
+        for sh in recent_sh:
             pending_zones.append({
                 "id": f"ps_{sh['index']}",
                 "type": "pending_sell",
@@ -198,7 +215,7 @@ class YUZARE_Engine:
                 "distance_pips": round((sh["price"] - current_price) / pip_unit, 1)
             })
 
-        for sl in recent_sl[:4]:
+        for sl in recent_sl:
             pending_zones.append({
                 "id": f"pb_{sl['index']}",
                 "type": "pending_buy",
@@ -326,71 +343,101 @@ class YUZARE_Engine:
         for trade in buy_trades:
             start_idx = trade["bar_index"] + 1
             cur_sl = trade["sl"]
+            trade["tp1_hit"] = False
+            trade["tp2_hit"] = False
+            trade["tp3_hit"] = False
+            trade["sl_hit"] = False
+            trade["is_closed"] = False
+
             for k in range(start_idx, n):
                 h = candles[k]["high"]
                 l = candles[k]["low"]
 
                 # Target Hit Detection
-                if h >= trade["tp1"] and trade["status"] == "ACTIVE":
-                    trade["status"] = "TP1_HIT"
+                if h >= trade["tp1"]:
+                    trade["tp1_hit"] = True
                     trade["max_rr_reached"] = rr_tp1
                     cur_sl = trade["entry"] # Move Stop to Breakeven!
 
-                if h >= trade["tp2"] and trade["status"] in ["ACTIVE", "TP1_HIT"]:
-                    trade["status"] = "TP2_HIT"
+                if h >= trade["tp2"]:
+                    trade["tp2_hit"] = True
                     trade["max_rr_reached"] = rr_tp2
                     cur_sl = trade["tp1"] # Trail Stop to TP1!
 
                 if h >= trade["tp3"]:
-                    trade["status"] = "TP3_HIT"
+                    trade["tp3_hit"] = True
+                    trade["status"] = "TP3 HIT 🎯"
                     trade["max_rr_reached"] = rr_tp3
+                    trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
                     trade["exit_price"] = trade["tp3"]
                     break
 
                 # SL / Trailing Hit
                 if l <= cur_sl:
-                    if trade["status"] == "ACTIVE":
-                        trade["status"] = "SL_HIT"
+                    trade["sl_hit"] = True
+                    trade["status"] = "SL HIT"
+                    trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
                     trade["exit_price"] = cur_sl
                     break
 
-            if trade["status"] in ["ACTIVE", "TP1_HIT", "TP2_HIT"]:
+            if not trade["is_closed"]:
+                if trade["tp2_hit"]:
+                    trade["status"] = "TP2 HIT ✓"
+                elif trade["tp1_hit"]:
+                    trade["status"] = "TP1 HIT ✓"
+                else:
+                    trade["status"] = "ACTIVE"
                 active_buy_trades.append(trade)
 
         for trade in sell_trades:
             start_idx = trade["bar_index"] + 1
             cur_sl = trade["sl"]
+            trade["tp1_hit"] = False
+            trade["tp2_hit"] = False
+            trade["tp3_hit"] = False
+            trade["sl_hit"] = False
+            trade["is_closed"] = False
+
             for k in range(start_idx, n):
                 h = candles[k]["high"]
                 l = candles[k]["low"]
 
-                if l <= trade["tp1"] and trade["status"] == "ACTIVE":
-                    trade["status"] = "TP1_HIT"
+                if l <= trade["tp1"]:
+                    trade["tp1_hit"] = True
                     trade["max_rr_reached"] = rr_tp1
                     cur_sl = trade["entry"] # Move Stop to Breakeven!
 
-                if l <= trade["tp2"] and trade["status"] in ["ACTIVE", "TP1_HIT"]:
-                    trade["status"] = "TP2_HIT"
+                if l <= trade["tp2"]:
+                    trade["tp2_hit"] = True
                     trade["max_rr_reached"] = rr_tp2
                     cur_sl = trade["tp1"] # Trail Stop to TP1!
 
                 if l <= trade["tp3"]:
-                    trade["status"] = "TP3_HIT"
+                    trade["tp3_hit"] = True
+                    trade["status"] = "TP3 HIT 🎯"
                     trade["max_rr_reached"] = rr_tp3
+                    trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
                     trade["exit_price"] = trade["tp3"]
                     break
 
                 if h >= cur_sl:
-                    if trade["status"] == "ACTIVE":
-                        trade["status"] = "SL_HIT"
+                    trade["sl_hit"] = True
+                    trade["status"] = "SL HIT"
+                    trade["is_closed"] = True
                     trade["exit_time"] = candles[k]["time"]
                     trade["exit_price"] = cur_sl
                     break
 
-            if trade["status"] in ["ACTIVE", "TP1_HIT", "TP2_HIT"]:
+            if not trade["is_closed"]:
+                if trade["tp2_hit"]:
+                    trade["status"] = "TP2 HIT ✓"
+                elif trade["tp1_hit"]:
+                    trade["status"] = "TP1 HIT ✓"
+                else:
+                    trade["status"] = "ACTIVE"
                 active_sell_trades.append(trade)
 
         # Calculate Statistics
@@ -410,8 +457,8 @@ class YUZARE_Engine:
             "active_sell_count": len(active_sell_trades)
         }
 
-        latest_buy = active_buy_trades[-1] if active_buy_trades else (buy_trades[-1] if buy_trades else None)
-        latest_sell = active_sell_trades[-1] if active_sell_trades else (sell_trades[-1] if sell_trades else None)
+        latest_buy = active_buy_trades[-1] if active_buy_trades else None
+        latest_sell = active_sell_trades[-1] if active_sell_trades else None
 
         return {
             "candles": colored_candles,
