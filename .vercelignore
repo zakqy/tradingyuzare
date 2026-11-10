@@ -1,6 +1,3 @@
-backend/
-mt5/
-pinescript/
 .venv/
 .vscode/
 run.bat

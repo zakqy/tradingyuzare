@@ -288,16 +288,61 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         manager.disconnect(websocket)
 
 # Mount frontend directory for static website
-frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+frontend_dir = os.path.join(root_dir, "frontend")
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 @app.get("/")
 def serve_index():
-    index_file = os.path.join(frontend_dir, "index.html")
-    if os.path.exists(index_file):
-        return FileResponse(index_file)
-    return {"message": "YUZARE Terminal API running. Frontend loading..."}
+    for candidate in [
+        os.path.join(root_dir, "index.html"),
+        os.path.join(frontend_dir, "index.html")
+    ]:
+        if os.path.exists(candidate):
+            return FileResponse(candidate, media_type="text/html")
+    return {"message": "YUZARE Terminal API running."}
+
+@app.get("/styles.css")
+def serve_styles():
+    for candidate in [
+        os.path.join(root_dir, "styles.css"),
+        os.path.join(frontend_dir, "styles.css")
+    ]:
+        if os.path.exists(candidate):
+            return FileResponse(candidate, media_type="text/css")
+    return JSONResponse(status_code=404, content={"error": "styles.css not found"})
+
+@app.get("/app.js")
+def serve_app_js():
+    for candidate in [
+        os.path.join(root_dir, "app.js"),
+        os.path.join(frontend_dir, "app.js")
+    ]:
+        if os.path.exists(candidate):
+            return FileResponse(candidate, media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"error": "app.js not found"})
+
+@app.get("/lightweight-charts.standalone.production.js")
+def serve_charts_js():
+    for candidate in [
+        os.path.join(root_dir, "lightweight-charts.standalone.production.js"),
+        os.path.join(frontend_dir, "lightweight-charts.standalone.production.js")
+    ]:
+        if os.path.exists(candidate):
+            return FileResponse(candidate, media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"error": "Chart library not found"})
+
+@app.get("/YUZARE_Indicator.pine")
+def serve_pine_script():
+    for candidate in [
+        os.path.join(root_dir, "YUZARE_Indicator.pine"),
+        os.path.join(frontend_dir, "YUZARE_Indicator.pine"),
+        os.path.join(root_dir, "pinescript", "YUZARE_Indicator.pine")
+    ]:
+        if os.path.exists(candidate):
+            return FileResponse(candidate, media_type="text/plain")
+    return JSONResponse(status_code=404, content={"error": "Pine Script not found"})
 
 if __name__ == "__main__":
     import uvicorn
