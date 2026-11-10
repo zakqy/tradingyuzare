@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, Response, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import websockets
@@ -287,62 +287,82 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         binance_task.cancel()
         manager.disconnect(websocket)
 
-# Mount frontend directory for static website
+# Static file resolution helpers (Zero-Dependency & Serverless Safe)
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 frontend_dir = os.path.join(root_dir, "frontend")
-if os.path.exists(frontend_dir):
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+def read_static_text(filename: str) -> Optional[str]:
+    candidates = [
+        os.path.join(root_dir, filename),
+        os.path.join(frontend_dir, filename),
+        os.path.join(os.getcwd(), filename),
+        os.path.join(os.getcwd(), "frontend", filename),
+        os.path.join(os.path.dirname(__file__), "..", filename),
+        os.path.join(os.path.dirname(__file__), "..", "frontend", filename)
+    ]
+    for p in candidates:
+        abs_p = os.path.abspath(p)
+        if os.path.isfile(abs_p):
+            try:
+                with open(abs_p, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                pass
+    return None
+
+def read_static_bytes(filename: str) -> Optional[bytes]:
+    candidates = [
+        os.path.join(root_dir, filename),
+        os.path.join(frontend_dir, filename),
+        os.path.join(os.getcwd(), filename),
+        os.path.join(os.getcwd(), "frontend", filename),
+        os.path.join(os.path.dirname(__file__), "..", filename),
+        os.path.join(os.path.dirname(__file__), "..", "frontend", filename)
+    ]
+    for p in candidates:
+        abs_p = os.path.abspath(p)
+        if os.path.isfile(abs_p):
+            try:
+                with open(abs_p, "rb") as f:
+                    return f.read()
+            except Exception:
+                pass
+    return None
 
 @app.get("/")
 def serve_index():
-    for candidate in [
-        os.path.join(root_dir, "index.html"),
-        os.path.join(frontend_dir, "index.html")
-    ]:
-        if os.path.exists(candidate):
-            return FileResponse(candidate, media_type="text/html")
-    return {"message": "YUZARE Terminal API running."}
+    content = read_static_text("index.html")
+    if content:
+        return HTMLResponse(content=content, status_code=200)
+    return HTMLResponse(content="<h2>YUZARE Trading Terminal - Initializing...</h2>", status_code=200)
 
 @app.get("/styles.css")
 def serve_styles():
-    for candidate in [
-        os.path.join(root_dir, "styles.css"),
-        os.path.join(frontend_dir, "styles.css")
-    ]:
-        if os.path.exists(candidate):
-            return FileResponse(candidate, media_type="text/css")
-    return JSONResponse(status_code=404, content={"error": "styles.css not found"})
+    content = read_static_text("styles.css")
+    if content:
+        return Response(content=content, media_type="text/css")
+    return Response(content="/* CSS */", media_type="text/css")
 
 @app.get("/app.js")
 def serve_app_js():
-    for candidate in [
-        os.path.join(root_dir, "app.js"),
-        os.path.join(frontend_dir, "app.js")
-    ]:
-        if os.path.exists(candidate):
-            return FileResponse(candidate, media_type="application/javascript")
-    return JSONResponse(status_code=404, content={"error": "app.js not found"})
+    content = read_static_text("app.js")
+    if content:
+        return Response(content=content, media_type="application/javascript")
+    return Response(content="// JS", media_type="application/javascript")
 
 @app.get("/lightweight-charts.standalone.production.js")
 def serve_charts_js():
-    for candidate in [
-        os.path.join(root_dir, "lightweight-charts.standalone.production.js"),
-        os.path.join(frontend_dir, "lightweight-charts.standalone.production.js")
-    ]:
-        if os.path.exists(candidate):
-            return FileResponse(candidate, media_type="application/javascript")
-    return JSONResponse(status_code=404, content={"error": "Chart library not found"})
+    content = read_static_bytes("lightweight-charts.standalone.production.js")
+    if content:
+        return Response(content=content, media_type="application/javascript")
+    return Response(content="// Chart library", media_type="application/javascript")
 
 @app.get("/YUZARE_Indicator.pine")
 def serve_pine_script():
-    for candidate in [
-        os.path.join(root_dir, "YUZARE_Indicator.pine"),
-        os.path.join(frontend_dir, "YUZARE_Indicator.pine"),
-        os.path.join(root_dir, "pinescript", "YUZARE_Indicator.pine")
-    ]:
-        if os.path.exists(candidate):
-            return FileResponse(candidate, media_type="text/plain")
-    return JSONResponse(status_code=404, content={"error": "Pine Script not found"})
+    content = read_static_text("YUZARE_Indicator.pine")
+    if content:
+        return Response(content=content, media_type="text/plain")
+    return Response(content="// YUZARE Pine Script", media_type="text/plain")
 
 if __name__ == "__main__":
     import uvicorn

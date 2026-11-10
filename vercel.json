@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "main.py": {
+      "includeFiles": "index.html,styles.css,app.js,lightweight-charts.standalone.production.js,YUZARE_Indicator.pine,frontend/**"
+    },
+    "api/index.py": {
+      "includeFiles": "index.html,styles.css,app.js,lightweight-charts.standalone.production.js,YUZARE_Indicator.pine,frontend/**"
+    }
+  }
+}
