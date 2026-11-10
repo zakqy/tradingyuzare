@@ -1,4 +1,4 @@
-# ⚡ TRXC QRR Real-Time Trading Terminal
+# ⚡ YUZARE Real-Time Trading Terminal
 
 Website dan Indikator Real-Time Khusus untuk **XAUUSD (Gold)** & **BTCUSD (Bitcoin)**, serta Multi-Timeframe dari **1 Menit (Scalping)** hingga **Weekly (Swing)**.
 
@@ -37,6 +37,7 @@ Website dan Indikator Real-Time Khusus untuk **XAUUSD (Gold)** & **BTCUSD (Bitco
 ### 06. Dioptimalkan untuk XAUUSD & BTCUSD
 - Didesain khusus mengantisipasi karakteristik pergerakan Gold (XAUUSD) dan Bitcoin (BTCUSD) yang memiliki volatilitas tinggi dan liquidity sweep.
 - Dapat juga digunakan untuk pair lain seperti ETHUSD, SOLUSD, EURUSD, dan GBPUSD.
+- Dilengkapi fitur **MT5 Sync Calibration** untuk menyamakan harga secara presisi dengan chart MT5 broker Anda.
 
 ---
 
@@ -53,24 +54,28 @@ py -m uvicorn backend.server:app --host 127.0.0.1 --port 8000
 ```
 Buka browser dan akses: `http://127.0.0.1:8000`
 
+### Cara 3: Akses Live GitHub Pages (Tanpa Perlu Instalasi)
+Buka langsung di browser:
+👉 **`https://zakqy.github.io/tradingyuzare/`**
+
 ---
 
 ## 📊 Penggunaan di TradingView (Pine Script v5)
 
 Selain website real-time lokal, indikator ini juga disediakan dalam format **TradingView Pine Script v5**:
-1. Buka website Anda di `http://127.0.0.1:8000`.
+1. Buka website Anda di `http://127.0.0.1:8000` atau via GitHub Pages.
 2. Klik tombol **"📋 Copy Pine Script"** di pojok kanan atas.
 3. Buka [TradingView.com](https://www.tradingview.com) dan buka chart apa saja.
 4. Di bagian bawah layar TradingView, klik tab **Pine Editor**.
 5. Paste kodenya lalu klik **"Add to Chart"**.
-6. File sumber juga tersimpan di folder `pinescript/TRXC_QRR_Indicator.pine`.
+6. File sumber juga tersimpan di folder `pinescript/YUZARE_Indicator.pine`.
 
 ---
 
-## 🎨 Tampilan dan Skema Warna (Mirip Gambar)
+## 🎨 Tampilan dan Skema Warna
 - **Background**: Modern Dark Terminal (`#0b0e14`).
-- **Candle Bullish**: Cyan Electric Glow (`#00e5ff`).
-- **Candle Bearish**: Deep Purple / Violet (`#9c27b0`).
+- **Candle Bullish**: Vivid Green (`#00c853`).
+- **Candle Bearish**: Vivid Red (`#f23645`).
 - **Pending Sell**: Red / Maroon rounded tag di area resistance masa depan.
 - **Pending Buy**: Green / Emerald rounded tag di area support masa depan.
 - **Audio Sound Effects**: Dilengkapi audio synthesizer Web Audio API untuk notifikasi BUY, SELL, Pending Alert, dan TP Hit.

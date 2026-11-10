@@ -1,4 +1,4 @@
-/* TRXC QRR Trading Terminal - Dark Theme */
+/* YUZARE Trading Terminal - Dark Theme */
 :root {
   --bg-main: #0b0e14;
   --bg-surface: #121620;
@@ -9,7 +9,7 @@
   --text-secondary: #8b949e;
   --text-muted: #565f6f;
   
-  /* TRXC QRR Theme: Green (Bullish) & Red (Bearish) */
+  /* YUZARE Theme: Green (Bullish) & Red (Bearish) */
   --bull-cyan: #00c853;
   --bull-cyan-glow: rgba(0, 200, 83, 0.25);
   --bear-purple: #f23645;

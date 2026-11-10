@@ -1,14 +1,14 @@
 //@version=5
-indicator("TRXC QRR - Quantum Range Reaction [Zero Repaint]", shorttitle="TRXC QRR", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+indicator("YUZARE [Zero Repaint]", shorttitle="YUZARE", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
 // ==========================================
 // 1. INPUT CONFIGURATION & PARAMETERS
 // ==========================================
-grp_qrr = "TRXC QRR Engine Settings"
-fast_len = input.int(9, "Fast EMA Length", group=grp_qrr)
-slow_len = input.int(21, "Slow EMA Length", group=grp_qrr)
-atr_len  = input.int(14, "ATR Volatility Length", group=grp_qrr)
-atr_mult = input.float(1.5, "ATR Multiplier for SL", step=0.1, group=grp_qrr)
+grp_engine = "YUZARE Engine Settings"
+fast_len = input.int(9, "Fast EMA Length", group=grp_engine)
+slow_len = input.int(21, "Slow EMA Length", group=grp_engine)
+atr_len  = input.int(14, "ATR Volatility Length", group=grp_engine)
+atr_mult = input.float(1.5, "ATR Multiplier for SL", step=0.1, group=grp_engine)
 
 grp_pz = "01. Pending Zones Settings (Future Projection)"
 show_pending   = input.bool(true, "Show Pending Zones", group=grp_pz)
@@ -39,10 +39,10 @@ ema_fast = ta.ema(close, fast_len)
 ema_slow = ta.ema(close, slow_len)
 rsi_val = ta.rsi(close, 14)
 
-// Candlestick coloring like TRXC screenshot
+// Candlestick coloring like YUZARE screenshot
 barcolor(close >= open ? color_bull : color_bear)
 
-// Quantum Range Reaction (QRR) Logic
+// YUZARE Trend Reaction Logic
 bull_impulse = ta.crossover(ema_fast, ema_slow) or (close > close[1] + 0.4 * atr_val and ema_fast > ema_slow)
 bear_impulse = ta.crossunder(ema_fast, ema_slow) or (close < close[1] - 0.4 * atr_val and ema_fast < ema_slow)
 
@@ -220,6 +220,6 @@ if barstate.islast and show_pending
 // ==========================================
 // 5. TRADINGVIEW ALERTS INTEGRATION
 // ==========================================
-alertcondition(buy_signal, title="TRXC QRR - BUY Signal", message="🟢 TRXC BUY Signal confirmed on {{ticker}} at {{close}}! TP1: {{plot_0}}")
-alertcondition(sell_signal, title="TRXC QRR - SELL Signal", message="🔴 TRXC SELL Signal confirmed on {{ticker}} at {{close}}! TP1: {{plot_0}}")
+alertcondition(buy_signal, title="YUZARE - BUY Signal", message="🟢 YUZARE BUY Signal confirmed on {{ticker}} at {{close}}! TP1: {{plot_0}}")
+alertcondition(sell_signal, title="YUZARE - SELL Signal", message="🔴 YUZARE SELL Signal confirmed on {{ticker}} at {{close}}! TP1: {{plot_0}}")
 

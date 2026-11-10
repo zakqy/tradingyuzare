@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
 //|                                              MT5_Live_Bridge.mq5 |
-//|                                  Copyright 2026, TRXC QRR Engine |
+//|                                     Copyright 2026, YUZARE Engine |
 //|         Jembatan Real-Time Feed dari MetaTrader 5 ke Web Terminal|
 //+------------------------------------------------------------------+
-#property copyright "TRXC QRR"
+#property copyright "YUZARE"
 #property link      "http://127.0.0.1:8000"
 #property version   "1.00"
-#property description "EA Bridge untuk mengirim harga tick real-time dari MT5 ke Web Terminal TRXC QRR"
+#property description "EA Bridge untuk mengirim harga tick real-time dari MT5 ke Web Terminal YUZARE"
 #property description "Pastikan 'http://127.0.0.1:8000' diizinkan di Tools -> Options -> Expert Advisors -> Allow WebRequest"
 
 input group "=== Konfigurasi Web Terminal ==="
@@ -22,7 +22,7 @@ ulong    lastTickMs = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("TRXC MT5 Bridge aktif pada symbol: ", _Symbol);
+   Print("YUZARE MT5 Bridge aktif pada symbol: ", _Symbol);
    Print("Mengirim harga langsung ke Web Terminal: ", InpServerUrl);
    return(INIT_SUCCEEDED);
 }
@@ -68,6 +68,6 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   Print("TRXC MT5 Bridge dimatikan.");
+   Print("YUZARE MT5 Bridge dimatikan.");
 }
 

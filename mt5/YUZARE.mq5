@@ -1,31 +1,31 @@
 //+------------------------------------------------------------------+
-//|                                                     TRXC_QRR.mq5 |
-//|                                  Copyright 2026, TRXC QRR Engine |
+//|                                                       YUZARE.mq5 |
+//|                                     Copyright 2026, YUZARE Engine |
 //|                                             https://127.0.0.1    |
 //+------------------------------------------------------------------+
-#property copyright   "TRXC QRR"
+#property copyright   "YUZARE"
 #property link        "https://127.0.0.1"
 #property version     "1.00"
-#property description "TRXC QRR - Quantum Range Reaction Indicator [Zero Repaint]"
+#property description "YUZARE - Indicator [Zero Repaint]"
 #property description "Dual Signal | Pending Zones | TP1-3 & SL Auto | Multi-TF"
 #property indicator_chart_window
 #property indicator_buffers 4
 #property indicator_plots   2
 
 //--- Plot Buy Arrow
-#property indicator_label1  "TRXC BUY"
+#property indicator_label1  "YUZARE BUY"
 #property indicator_type1   DRAW_ARROW
 #property indicator_color1  clrLimeGreen
 #property indicator_width1  2
 
 //--- Plot Sell Arrow
-#property indicator_label2  "TRXC SELL"
+#property indicator_label2  "YUZARE SELL"
 #property indicator_type2   DRAW_ARROW
 #property indicator_color2  clrCrimson
 #property indicator_width2  2
 
 //--- Inputs
-input group "=== TRXC QRR Engine Parameters ==="
+input group "=== YUZARE Engine Parameters ==="
 input int      InpAtrPeriod     = 14;          // ATR Period
 input double   InpAtrMult       = 1.5;         // ATR Multiplier for SL
 input int      InpFastEma       = 9;           // Fast EMA
@@ -157,7 +157,7 @@ int OnCalculate(const int rates_total,
          if(i == rates_total - 2 && time[i] != lastBuyTime)
          {
             lastBuyTime = time[i];
-            TriggerAlert("TRXC QRR: BUY Sinyal Terkonfirmasi pada " + _Symbol + " @ " + DoubleToString(close[i], _Digits));
+            TriggerAlert("YUZARE: BUY Sinyal Terkonfirmasi pada " + _Symbol + " @ " + DoubleToString(close[i], _Digits));
             if(InpDrawTPSLLines) DrawTPSLLines(true, time[i], close[i], low[i], curAtr);
          }
       }
@@ -169,7 +169,7 @@ int OnCalculate(const int rates_total,
          if(i == rates_total - 2 && time[i] != lastSellTime)
          {
             lastSellTime = time[i];
-            TriggerAlert("TRXC QRR: SELL Sinyal Terkonfirmasi pada " + _Symbol + " @ " + DoubleToString(close[i], _Digits));
+            TriggerAlert("YUZARE: SELL Sinyal Terkonfirmasi pada " + _Symbol + " @ " + DoubleToString(close[i], _Digits));
             if(InpDrawTPSLLines) DrawTPSLLines(false, time[i], close[i], high[i], curAtr);
          }
       }
@@ -189,7 +189,7 @@ int OnCalculate(const int rates_total,
 //+------------------------------------------------------------------+
 void DrawTPSLLines(bool isBuy, datetime t, double entry, double swingExtreme, double curAtr)
 {
-   string prefix = isBuy ? "TRXC_BUY_" : "TRXC_SELL_";
+   string prefix = isBuy ? "YUZARE_BUY_" : "YUZARE_SELL_";
    datetime tEnd = t + PeriodSeconds() * 20;
 
    double risk = MathMax(curAtr * InpAtrMult, MathAbs(entry - swingExtreme));
@@ -242,14 +242,14 @@ void UpdatePendingZones(int total, const datetime &time[], const double &high[],
       if(isPH && high[i] > curPrice && foundSells < 3)
       {
          foundSells++;
-         string name = "TRXC_PZ_SELL_" + IntegerToString(foundSells);
+         string name = "YUZARE_PZ_SELL_" + IntegerToString(foundSells);
          ObjectDelete(0, name);
          ObjectCreate(0, name, OBJ_RECTANGLE, 0, tFutureStart, high[i] + 0.15 * curAtr, tFutureEnd, high[i]);
          ObjectSetInteger(0, name, OBJPROP_COLOR, StringToColor("#D50000"));
          ObjectSetInteger(0, name, OBJPROP_BGCOLOR, StringToColor("#4A151B"));
          ObjectSetInteger(0, name, OBJPROP_FILL, true);
 
-         string txtName = "TRXC_PZ_LBL_SELL_" + IntegerToString(foundSells);
+         string txtName = "YUZARE_PZ_LBL_SELL_" + IntegerToString(foundSells);
          ObjectDelete(0, txtName);
          ObjectCreate(0, txtName, OBJ_TEXT, 0, tFutureStart + PeriodSeconds() * 4, high[i]);
          ObjectSetString(0, txtName, OBJPROP_TEXT, "pending sell " + DoubleToString(high[i], _Digits));
@@ -265,14 +265,14 @@ void UpdatePendingZones(int total, const datetime &time[], const double &high[],
       if(isPL && low[i] < curPrice && foundBuys < 3)
       {
          foundBuys++;
-         string name = "TRXC_PZ_BUY_" + IntegerToString(foundBuys);
+         string name = "YUZARE_PZ_BUY_" + IntegerToString(foundBuys);
          ObjectDelete(0, name);
          ObjectCreate(0, name, OBJ_RECTANGLE, 0, tFutureStart, low[i], tFutureEnd, low[i] - 0.15 * curAtr);
          ObjectSetInteger(0, name, OBJPROP_COLOR, StringToColor("#00C853"));
          ObjectSetInteger(0, name, OBJPROP_BGCOLOR, StringToColor("#0D381E"));
          ObjectSetInteger(0, name, OBJPROP_FILL, true);
 
-         string txtName = "TRXC_PZ_LBL_BUY_" + IntegerToString(foundBuys);
+         string txtName = "YUZARE_PZ_LBL_BUY_" + IntegerToString(foundBuys);
          ObjectDelete(0, txtName);
          ObjectCreate(0, txtName, OBJ_TEXT, 0, tFutureStart + PeriodSeconds() * 4, low[i]);
          ObjectSetString(0, txtName, OBJPROP_TEXT, "pending buy " + DoubleToString(low[i], _Digits));
@@ -296,7 +296,7 @@ void TriggerAlert(string msg)
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   ObjectsDeleteAll(0, "TRXC_");
+   ObjectsDeleteAll(0, "YUZARE_");
    IndicatorRelease(handleAtr);
    IndicatorRelease(handleEmaFast);
    IndicatorRelease(handleEmaSlow);

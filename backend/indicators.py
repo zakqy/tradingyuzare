@@ -1,5 +1,5 @@
 """
-TRXC QRR Indicator Engine
+YUZARE Indicator Engine
 Algoritma Zero-Repaint, Dual Signal, Pending Zones, dan Level TP/SL Otomatis.
 Dioptimalkan untuk XAUUSD (Gold Spot) dan BTCUSD (Bitcoin).
 """
@@ -76,7 +76,7 @@ def calculate_rsi(closes: List[float], period: int = 14) -> List[float]:
             rsi.append(100.0 - (100.0 / (1.0 + rs)))
     return rsi
 
-class TRXC_QRR_Engine:
+class YUZARE_Engine:
     def __init__(self, atr_period: int = 12, qrr_mult: float = 1.4, swing_lookback: int = 6):
         self.atr_period = atr_period
         self.qrr_mult = qrr_mult
@@ -424,3 +424,6 @@ class TRXC_QRR_Engine:
             "stats": stats,
             "current_price": current_price
         }
+
+# Backward compatibility alias
+TRXC_QRR_Engine = YUZARE_Engine

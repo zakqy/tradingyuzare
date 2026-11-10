@@ -1,5 +1,5 @@
 """
-TRXC QRR Real-Time Trading Terminal Server
+YUZARE Real-Time Trading Terminal Server
 FastAPI Web & WebSocket Server
 """
 
@@ -20,12 +20,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 import websockets
 
-from backend.indicators import TRXC_QRR_Engine
+from backend.indicators import YUZARE_Engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("TRXC_QRR")
+logger = logging.getLogger("YUZARE")
 
-app = FastAPI(title="TRXC QRR Trading Terminal", version="1.0.0")
+app = FastAPI(title="YUZARE Trading Terminal", version="1.0.0")
 
 # Enable CORS for any client
 app.add_middleware(
@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-engine = TRXC_QRR_Engine()
+engine = YUZARE_Engine()
 
 # Pair mapping dengan offset kalibrasi default untuk menyesuaikan dengan broker MT5
 PAIR_MAP = {
@@ -113,7 +113,7 @@ def get_analysis(
     rr_tp3: float = Query(3.8)
 ):
     """
-    Mengambil data candlestick dan menjalankan TRXC QRR Indicator Engine.
+    Mengambil data candlestick dan menjalankan YUZARE Indicator Engine.
     Menghasilkan candle colored, buy/sell zero-repaint signals, pending zones, dan dual signal levels.
     """
     symbol = symbol.upper()
@@ -297,7 +297,7 @@ def serve_index():
     index_file = os.path.join(frontend_dir, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
-    return {"message": "TRXC QRR Terminal API running. Frontend loading..."}
+    return {"message": "YUZARE Terminal API running. Frontend loading..."}
 
 if __name__ == "__main__":
     import uvicorn

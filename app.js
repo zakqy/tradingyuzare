@@ -1,5 +1,5 @@
 /**
- * TRXC QRR Trading Terminal - Frontend Engine
+ * YUZARE Trading Terminal - Frontend Engine
  * Real-Time Charting, Zero-Repaint Indicator, Dual Signal, Pending Zones, and Audio Synthesizer
  * Supports both Local FastAPI Server AND Standalone GitHub Pages Serverless Mode!
  */
@@ -340,7 +340,7 @@ function computeClientSideIndicators(candles) {
 
 // Fetch Market Data (Supports Local API & Direct Binance API for GitHub Pages)
 async function loadMarketData() {
-  showToast('🔄 Memuat analisa TRXC QRR...', '⏳');
+  showToast('🔄 Memuat analisa YUZARE...', '⏳');
   try {
     let data = null;
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
@@ -394,7 +394,7 @@ async function loadMarketData() {
     startTickerHeartbeat();
     startCountdown();
 
-    showToast(`✓ TRXC QRR Aktif · ${state.symbol} (${state.timeframe})`, '⚡');
+    showToast(`✓ YUZARE Aktif · ${state.symbol} (${state.timeframe})`, '⚡');
   } catch (err) {
     console.error('Error loading data:', err);
     showToast('Gagal memuat feed chart', '❌');
@@ -836,7 +836,7 @@ function setupEventListeners() {
     const display = document.getElementById('pinescript-code-display');
     display.textContent = 'Memuat kode script...';
     try {
-      const resp = await fetch('./TRXC_QRR_Indicator.pine');
+      const resp = await fetch('./YUZARE_Indicator.pine');
       if (resp.ok) {
         display.textContent = await resp.text();
       } else {

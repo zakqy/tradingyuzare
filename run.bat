@@ -1,8 +1,8 @@
 @echo off
-title TRXC QRR Trading Terminal - Server
+title YUZARE Trading Terminal - Server
 cd /d "%~dp0"
 echo ========================================================
-echo   TRXC QRR REAL-TIME TRADING TERMINAL
+echo   YUZARE REAL-TIME TRADING TERMINAL
 echo   Zero Repaint | Dual Signal | Pending Zones | Multi-TF
 echo ========================================================
 echo.
