@@ -1111,6 +1111,24 @@ function setupEventListeners() {
     loadMarketData();
   });
 
+  // Logout Buttons
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+      if (confirm('Apakah Anda yakin ingin keluar dari terminal?')) {
+        logout();
+      }
+    });
+  }
+  const btnModalLogout = document.getElementById('btn-modal-logout');
+  if (btnModalLogout) {
+    btnModalLogout.addEventListener('click', () => {
+      if (confirm('Apakah Anda yakin ingin keluar dari terminal?')) {
+        logout();
+      }
+    });
+  }
+
   // Mobile Bottom Navigation Tabs (Khusus Tampilan Handphone)
   const mobileNavBtns = document.querySelectorAll('.mobile-nav-btn');
   const sidebar = document.querySelector('.sidebar');
@@ -1179,9 +1197,209 @@ function showToast(msg, icon = '🔔') {
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// App Initialization
+// ==========================================================
+// AUTHENTICATION & ACCESS CONTROL SYSTEM
+// ==========================================================
+const AUTH_USERS = [
+  { username: 'zakzakqy', password: 'Savior,123', name: 'zakzakqy' },
+  { username: 'piterxzakqy', password: 'piterxzakqy123', name: 'piterxzakqy' }
+];
+
+let isTerminalInitialized = false;
+
+function getLoggedUser() {
+  try {
+    const s = sessionStorage.getItem('yuzare_logged_user');
+    if (s) return JSON.parse(s);
+    const l = localStorage.getItem('yuzare_logged_user');
+    if (l) return JSON.parse(l);
+  } catch (e) {
+    console.warn('Session parsing error:', e);
+  }
+  return null;
+}
+
+function setLoggedUser(userObj, remember) {
+  try {
+    sessionStorage.setItem('yuzare_logged_user', JSON.stringify(userObj));
+    if (remember) {
+      localStorage.setItem('yuzare_logged_user', JSON.stringify(userObj));
+    } else {
+      localStorage.removeItem('yuzare_logged_user');
+    }
+  } catch (e) {
+    console.warn('Storage error:', e);
+  }
+}
+
+function logout() {
+  try {
+    sessionStorage.removeItem('yuzare_logged_user');
+    localStorage.removeItem('yuzare_logged_user');
+  } catch (e) {}
+
+  if (state.ws) {
+    try { state.ws.close(); } catch (e) {}
+    state.ws = null;
+  }
+  if (state.countdownInterval) clearInterval(state.countdownInterval);
+  if (state.tickerPollInterval) clearInterval(state.tickerPollInterval);
+
+  // Update UI Elements
+  const badge = document.getElementById('user-profile-badge');
+  const btnLogout = document.getElementById('btn-logout');
+  if (badge) badge.style.display = 'none';
+  if (btnLogout) btnLogout.style.display = 'none';
+
+  const modalSettings = document.getElementById('modal-settings');
+  if (modalSettings) modalSettings.classList.remove('active');
+
+  const gate = document.getElementById('login-gate');
+  if (gate) {
+    gate.classList.remove('hidden');
+    const pwdInput = document.getElementById('login-password');
+    if (pwdInput) pwdInput.value = '';
+    const errEl = document.getElementById('login-error');
+    if (errEl) errEl.style.display = 'none';
+  }
+
+  showToast('Anda telah keluar dari terminal.', '👋');
+}
+
+function updateAuthUI(user) {
+  const badge = document.getElementById('user-profile-badge');
+  const btnLogout = document.getElementById('btn-logout');
+  const nameEl = document.getElementById('user-display-name');
+  const modalInfo = document.getElementById('modal-user-info');
+
+  const displayName = user.name || user.username;
+  if (nameEl) nameEl.textContent = displayName;
+  if (modalInfo) modalInfo.textContent = 'Login sebagai: ' + displayName;
+  if (badge) badge.style.display = 'flex';
+  if (btnLogout) btnLogout.style.display = 'flex';
+}
+
+function startTerminal() {
+  if (!isTerminalInitialized) {
+    isTerminalInitialized = true;
+    initChart();
+    setupEventListeners();
+    loadMarketData();
+  } else {
+    loadMarketData();
+  }
+}
+
+function initAuth() {
+  const gate = document.getElementById('login-gate');
+  const form = document.getElementById('login-form');
+  const usernameInput = document.getElementById('login-username');
+  const passwordInput = document.getElementById('login-password');
+  const rememberInput = document.getElementById('login-remember');
+  const errorEl = document.getElementById('login-error');
+  const errorText = document.getElementById('login-error-text');
+  const togglePwdBtn = document.getElementById('btn-toggle-pwd');
+
+  // Toggle Password Visibility
+  if (togglePwdBtn && passwordInput) {
+    togglePwdBtn.addEventListener('click', () => {
+      const isPwd = passwordInput.getAttribute('type') === 'password';
+      passwordInput.setAttribute('type', isPwd ? 'text' : 'password');
+      togglePwdBtn.textContent = isPwd ? '🙈' : '👁️';
+    });
+  }
+
+  // Check Existing Session
+  const currentUser = getLoggedUser();
+  if (currentUser && currentUser.username) {
+    if (gate) gate.classList.add('hidden');
+    updateAuthUI(currentUser);
+    startTerminal();
+  } else {
+    if (gate) gate.classList.remove('hidden');
+    setTimeout(() => {
+      if (usernameInput) usernameInput.focus();
+    }, 150);
+  }
+
+  // Handle Login Submit
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const rawUser = (usernameInput.value || '').trim();
+      const rawPass = (passwordInput.value || '').trim();
+
+      if (!rawUser || !rawPass) {
+        if (errorEl && errorText) {
+          errorText.textContent = 'Harap isi username dan password!';
+          errorEl.style.display = 'flex';
+        }
+        return;
+      }
+
+      // Check against credentials (case-insensitive for username, exact match for password)
+      const matched = AUTH_USERS.find(
+        u => u.username.toLowerCase() === rawUser.toLowerCase() && u.password === rawPass
+      );
+
+      if (matched) {
+        if (errorEl) errorEl.style.display = 'none';
+        const userObj = {
+          username: matched.username,
+          name: matched.name,
+          loginTime: Date.now()
+        };
+        const remember = rememberInput ? rememberInput.checked : true;
+        setLoggedUser(userObj, remember);
+
+        if (gate) gate.classList.add('hidden');
+        updateAuthUI(userObj);
+        startTerminal();
+        showToast(`Selamat datang, ${matched.name}! 🚀`, '✅');
+      } else {
+        // Fallback check ke backend API jika server FastAPI aktif
+        try {
+          const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: rawUser, password: rawPass })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const userObj = {
+              username: data.username,
+              name: data.username,
+              loginTime: Date.now()
+            };
+            setLoggedUser(userObj, rememberInput ? rememberInput.checked : true);
+            if (gate) gate.classList.add('hidden');
+            updateAuthUI(userObj);
+            startTerminal();
+            showToast(`Selamat datang, ${data.username}! 🚀`, '✅');
+            return;
+          }
+        } catch (apiErr) {
+          // Static serverless mode fallback
+        }
+
+        if (errorEl && errorText) {
+          errorText.textContent = 'Username atau password salah!';
+          errorEl.style.display = 'flex';
+          // Trigger shake animation
+          errorEl.classList.remove('login-error');
+          void errorEl.offsetWidth; // re-flow
+          errorEl.classList.add('login-error');
+        }
+        if (passwordInput) {
+          passwordInput.value = '';
+          passwordInput.focus();
+        }
+      }
+    });
+  }
+}
+
+// App Initialization Gate
 window.addEventListener('DOMContentLoaded', () => {
-  initChart();
-  setupEventListeners();
-  loadMarketData();
+  initAuth();
 });

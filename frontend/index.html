@@ -72,6 +72,15 @@
 
     <!-- Header Right Buttons -->
     <div class="header-actions">
+      <!-- User Profile Badge & Logout -->
+      <div class="user-badge" id="user-profile-badge" style="display: none;" title="Akun Terautentikasi">
+        <span class="user-badge-icon">👤</span>
+        <span id="user-display-name">zakzakqy</span>
+      </div>
+      <button class="action-btn danger" id="btn-logout" style="display: none;" title="Keluar dari Terminal">
+        🚪 Keluar
+      </button>
+
       <button class="action-btn" id="btn-sound-toggle">
         <span id="sound-icon">🔊</span> <span id="sound-label">Audio ON</span>
       </button>
@@ -332,6 +341,13 @@
             <label>Pending Zones Lookback:</label>
             <input type="number" id="inp-pz-lookback" value="7" min="3" max="20" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
           </div>
+          <div style="margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-weight: 600; color: #fff; font-size: 12px;">Akun Sesi:</div>
+              <div id="modal-user-info" style="color: var(--bull-cyan); font-family: var(--font-mono); font-size: 11px;">zakzakqy</div>
+            </div>
+            <button class="action-btn danger" id="btn-modal-logout">🚪 Keluar (Logout)</button>
+          </div>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
           <button class="action-btn primary" id="btn-save-settings">Simpan & Terapkan</button>
@@ -369,6 +385,75 @@
       <span class="nav-label">Setting</span>
     </button>
   </nav>
+
+  <!-- Login Gate Modal (Restricted Access) -->
+  <div class="login-gate" id="login-gate">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo-glow">⚡</div>
+        <h1 class="login-title">YUZARE TERMINAL</h1>
+        <div class="login-tag">RESTRICTED ACCESS · ZERO REPAINT</div>
+        <p class="login-desc">Masukkan kredensial akun terdaftar untuk mengakses analisa market dan sinyal trading real-time.</p>
+      </div>
+
+      <form id="login-form" class="login-form" autocomplete="on">
+        <!-- Error Alert -->
+        <div class="login-error" id="login-error" style="display: none;">
+          <span class="login-error-icon">⚠️</span>
+          <span id="login-error-text">Username atau password salah!</span>
+        </div>
+
+        <div class="form-group">
+          <label for="login-username">Username</label>
+          <div class="input-wrapper">
+            <span class="input-icon">👤</span>
+            <input 
+              type="text" 
+              id="login-username" 
+              name="username"
+              placeholder="Contoh: zakzakqy" 
+              autocomplete="username" 
+              required
+              autofocus
+            >
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <div class="input-wrapper">
+            <span class="input-icon">🔒</span>
+            <input 
+              type="password" 
+              id="login-password" 
+              name="password"
+              placeholder="Masukkan password..." 
+              autocomplete="current-password" 
+              required
+            >
+            <button type="button" class="btn-toggle-pwd" id="btn-toggle-pwd" title="Lihat/Sembunyikan password">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <div class="form-options">
+          <label class="remember-checkbox">
+            <input type="checkbox" id="login-remember" checked>
+            <span>Ingat Saya (Simpan Sesi)</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn-login-submit" id="btn-login-submit">
+          <span>🔓 Buka Akses Terminal</span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <span>🔒 Sistem Autentikasi Terenkripsi · Sinyal Eksklusif</span>
+      </div>
+    </div>
+  </div>
 
   <!-- Scripts -->
   <script src="./lightweight-charts.standalone.production.js"></script>

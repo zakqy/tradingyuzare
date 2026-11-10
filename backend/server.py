@@ -287,6 +287,27 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         binance_task.cancel()
         manager.disconnect(websocket)
 
+AUTH_USERS = {
+    "zakzakqy": "Savior,123",
+    "piterxzakqy": "piterxzakqy123",
+}
+
+@app.post("/api/auth/login")
+async def api_auth_login(payload: Dict[str, Any]):
+    username = str(payload.get("username", "")).strip().lower()
+    password = str(payload.get("password", "")).strip()
+    
+    if username in AUTH_USERS and AUTH_USERS[username] == password:
+        return JSONResponse(status_code=200, content={
+            "status": "ok",
+            "username": username,
+            "message": "Login berhasil"
+        })
+    return JSONResponse(status_code=401, content={
+        "status": "error",
+        "message": "Username atau password salah!"
+    })
+
 # Static file resolution helpers (Zero-Dependency & Serverless Safe)
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 frontend_dir = os.path.join(root_dir, "frontend")
