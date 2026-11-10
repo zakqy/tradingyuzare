@@ -451,16 +451,17 @@ class YUZARE_Engine:
                     trade["status"] = "ACTIVE"
                 active_sell_trades.append(trade)
 
-        # Calculate Statistics
-        all_completed = [t for t in (buy_trades + sell_trades) if t["status"] != "ACTIVE"]
-        tp_hits = [t for t in all_completed if "TP" in t["status"]]
-        sl_hits = [t for t in all_completed if t["status"] == "SL_HIT"]
+        # Calculate Statistics dynamically for the selected timeframe
+        all_completed = [t for t in (buy_trades + sell_trades) if t["is_closed"] or t.get("tp1_hit") or t.get("sl_hit")]
+        tp_hits = [t for t in all_completed if t.get("tp1_hit") or "TP" in t.get("status", "")]
+        sl_hits = [t for t in all_completed if (t.get("sl_hit") or t.get("status") == "SL HIT") and not t.get("tp1_hit")]
         total_signals = len(signals)
-        win_rate = (len(tp_hits) / len(all_completed) * 100.0) if all_completed else 0.0
+        total_decided = len(tp_hits) + len(sl_hits)
+        win_rate = (len(tp_hits) / total_decided * 100.0) if total_decided > 0 else 0.0
 
         stats = {
             "total_signals": total_signals,
-            "completed_trades": len(all_completed),
+            "completed_trades": total_decided,
             "tp_hits": len(tp_hits),
             "sl_hits": len(sl_hits),
             "win_rate": round(win_rate, 1),

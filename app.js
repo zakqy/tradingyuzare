@@ -479,6 +479,14 @@ function computeClientSideIndicators(candles) {
   const activeBuys = buy_trades.filter(t => !t.is_closed);
   const activeSells = sell_trades.filter(t => !t.is_closed);
 
+  // Real Dynamic Performance Stats Calculation for selected timeframe
+  const allTrades = [...buy_trades, ...sell_trades];
+  const allCompleted = allTrades.filter(t => t.is_closed || t.tp1_hit || t.sl_hit);
+  const tpHits = allCompleted.filter(t => t.tp1_hit || (t.status && t.status.includes('TP')));
+  const slHits = allCompleted.filter(t => (t.sl_hit || t.status === 'SL HIT') && !t.tp1_hit);
+  const totalDecided = tpHits.length + slHits.length;
+  const winRate = totalDecided > 0 ? Math.round((tpHits.length / totalDecided) * 1000) / 10 : 0;
+
   return {
     candles: colored,
     signals,
@@ -488,9 +496,10 @@ function computeClientSideIndicators(candles) {
     current_price: curPrice,
     stats: {
       total_signals: signals.length,
-      win_rate: 76.2,
-      tp_hits: Math.floor(signals.length * 0.76),
-      sl_hits: Math.floor(signals.length * 0.24),
+      completed_trades: totalDecided,
+      win_rate: winRate,
+      tp_hits: tpHits.length,
+      sl_hits: slHits.length,
     },
   };
 }
@@ -824,6 +833,8 @@ function updateSidebar(data) {
 
   if (state.activeBuy) {
     const b = state.activeBuy;
+    if (b.tp1_hit) b._counted_tp = true;
+    if (b.sl_hit) b._counted_sl = true;
     document.getElementById('buy-entry-val').textContent = b.entry.toFixed(2);
     document.getElementById('buy-tp1-val').textContent = b.tp1.toFixed(2);
     document.getElementById('buy-tp2-val').textContent = b.tp2.toFixed(2);
@@ -847,6 +858,8 @@ function updateSidebar(data) {
 
   if (state.activeSell) {
     const s = state.activeSell;
+    if (s.tp1_hit) s._counted_tp = true;
+    if (s.sl_hit) s._counted_sl = true;
     document.getElementById('sell-entry-val').textContent = s.entry.toFixed(2);
     document.getElementById('sell-tp1-val').textContent = s.tp1.toFixed(2);
     document.getElementById('sell-tp2-val').textContent = s.tp2.toFixed(2);
@@ -869,11 +882,22 @@ function updateSidebar(data) {
   }
 
   if (data.stats) {
-    document.getElementById('stat-winrate').textContent = `${data.stats.win_rate}%`;
-    document.getElementById('stat-signals').textContent = data.stats.total_signals;
-    document.getElementById('stat-tphits').textContent = data.stats.tp_hits;
-    document.getElementById('stat-slhits').textContent = data.stats.sl_hits;
+    state.stats = { ...data.stats };
+    renderStatsDisplay();
   }
+}
+
+function renderStatsDisplay() {
+  if (!state.stats) return;
+  const wrEl = document.getElementById('stat-winrate');
+  const sigEl = document.getElementById('stat-signals');
+  const tpHitEl = document.getElementById('stat-tphits');
+  const slHitEl = document.getElementById('stat-slhits');
+
+  if (wrEl) wrEl.textContent = `${state.stats.win_rate}%`;
+  if (sigEl) sigEl.textContent = state.stats.total_signals;
+  if (tpHitEl) tpHitEl.textContent = state.stats.tp_hits;
+  if (slHitEl) slHitEl.textContent = state.stats.sl_hits;
 }
 
 // Live Tick Update
@@ -917,6 +941,13 @@ function updateSidebarPrice(currentPrice) {
     if (currentPrice >= state.activeBuy.tp1 && !state.activeBuy.tp1_hit) {
       state.activeBuy.tp1_hit = true;
       needsTPSLRedraw = true;
+      if (state.stats && !state.activeBuy._counted_tp) {
+        state.activeBuy._counted_tp = true;
+        state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
+        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+        renderStatsDisplay();
+      }
     }
     if (currentPrice >= state.activeBuy.tp2 && !state.activeBuy.tp2_hit) {
       state.activeBuy.tp2_hit = true;
@@ -936,6 +967,13 @@ function updateSidebarPrice(currentPrice) {
       state.activeBuy.sl_hit = true;
       state.activeBuy.status = 'SL HIT';
       needsTPSLRedraw = true;
+      if (state.stats && !state.activeBuy._counted_sl && !state.activeBuy._counted_tp) {
+        state.activeBuy._counted_sl = true;
+        state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
+        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+        renderStatsDisplay();
+      }
     }
   }
 
@@ -943,6 +981,13 @@ function updateSidebarPrice(currentPrice) {
     if (currentPrice <= state.activeSell.tp1 && !state.activeSell.tp1_hit) {
       state.activeSell.tp1_hit = true;
       needsTPSLRedraw = true;
+      if (state.stats && !state.activeSell._counted_tp) {
+        state.activeSell._counted_tp = true;
+        state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
+        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+        renderStatsDisplay();
+      }
     }
     if (currentPrice <= state.activeSell.tp2 && !state.activeSell.tp2_hit) {
       state.activeSell.tp2_hit = true;
@@ -962,6 +1007,13 @@ function updateSidebarPrice(currentPrice) {
       state.activeSell.sl_hit = true;
       state.activeSell.status = 'SL HIT';
       needsTPSLRedraw = true;
+      if (state.stats && !state.activeSell._counted_sl && !state.activeSell._counted_tp) {
+        state.activeSell._counted_sl = true;
+        state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
+        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+        renderStatsDisplay();
+      }
     }
   }
 
