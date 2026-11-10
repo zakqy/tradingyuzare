@@ -39,6 +39,26 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
 }
 
 body {
@@ -46,6 +66,7 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -517,12 +538,16 @@ body {
 
 /* Right Sidebar: Dual Signal & Analytics */
 .sidebar {
-  width: 320px;
+  width: 310px;
+  min-width: 300px;
+  max-width: 330px;
+  flex-shrink: 0;
   background-color: var(--bg-surface);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   gap: 12px;
   padding: 12px;
   z-index: 15;
@@ -605,16 +630,19 @@ body {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
+  gap: 8px;
 }
 
 .signal-label {
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .signal-value {
   font-family: var(--font-mono);
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .target-grid {
@@ -633,6 +661,21 @@ body {
   font-family: var(--font-mono);
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.target-item span:first-child {
+  color: var(--text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.target-item span:last-child {
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .target-item.hit {
@@ -800,14 +843,11 @@ body {
    RESPONSIVE DESIGN (DESKTOP / LAPTOP / TABLET / MOBILE)
    ========================================== */
 
-/* Responsive adjustments for Small Laptops & Medium Screens */
-@media (max-width: 1400px) {
+/* Responsive adjustments for Small Laptops & Medium Screens (100% Zoom) */
+@media (max-width: 1550px) {
   .feature-pills {
     display: none;
   }
-}
-
-@media (max-width: 1250px) {
   .indicator-title-tag {
     display: none;
   }
@@ -815,32 +855,72 @@ body {
     display: none;
   }
   .action-btn {
-    padding: 6px 9px;
+    padding: 6px 10px;
     gap: 0;
   }
   .custom-select {
     max-width: 180px;
+    font-size: 11.5px;
+  }
+  .timeframe-group {
+    gap: 2px;
+  }
+  .tf-btn {
+    padding: 4px 7px;
+    font-size: 11px;
+  }
+  .offset-badge {
+    padding: 2px 6px;
+    font-size: 10.5px;
   }
 }
 
-@media (max-width: 1050px) {
+@media (max-width: 1280px) {
   .header {
     padding: 0 10px;
     gap: 8px;
   }
   .brand-section {
-    gap: 8px;
+    gap: 6px;
+  }
+  .custom-select {
+    max-width: 150px;
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .timeframe-group {
+    gap: 2px;
   }
   .tf-btn {
     padding: 4px 6px;
-    font-size: 11px;
+    min-width: 26px;
+    font-size: 10.5px;
   }
   .user-badge {
-    padding: 3px 8px;
-    font-size: 11px;
-  }
-  .offset-badge {
     padding: 2px 6px;
+    font-size: 10.5px;
+  }
+  .sidebar {
+    width: 290px;
+    min-width: 290px;
+  }
+}
+
+@media (max-width: 1050px) {
+  .header {
+    padding: 0 8px;
+    gap: 6px;
+  }
+  .custom-select {
+    max-width: 135px;
+  }
+  .offset-badge span:first-child {
+    font-size: 10px;
+  }
+  .sidebar {
+    width: 280px;
+    min-width: 280px;
+    padding: 10px;
   }
 }
 
@@ -849,7 +929,7 @@ body {
   display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   body {
     height: 100vh;
     height: 100dvh; /* Dynamic viewport height untuk browser mobile (Chrome/Safari) */
@@ -859,26 +939,29 @@ body {
   /* Header Mobile */
   .header {
     height: auto;
-    min-height: 48px;
-    padding: 6px 10px;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: space-between;
-  }
-
-  .brand-section {
-    flex: 1 1 100%;
+    min-height: 44px;
+    padding: 5px 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  .brand-section::-webkit-scrollbar {
+  .header::-webkit-scrollbar {
     display: none;
+  }
+
+  .brand-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
   .brand-badge {
@@ -895,9 +978,9 @@ body {
   }
 
   .custom-select {
-    padding: 4px 6px;
-    font-size: 11px;
-    max-width: 140px;
+    padding: 3px 6px;
+    font-size: 10.5px;
+    max-width: 120px;
   }
 
   /* Timeframe scrollable chips */
@@ -905,59 +988,46 @@ body {
     flex-shrink: 0;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 2px;
+    padding: 1px;
     gap: 2px;
   }
 
   .tf-btn {
-    padding: 4px 7px;
-    font-size: 11px;
-    min-width: 28px;
+    padding: 3px 6px;
+    font-size: 10px;
+    min-width: 24px;
     text-align: center;
   }
 
   /* MT5 Sync Control on Mobile */
   .offset-badge {
-    padding: 2px 6px;
-    font-size: 10px;
-    gap: 4px;
+    padding: 2px 5px;
+    font-size: 9.5px;
+    gap: 2px;
     flex-shrink: 0;
   }
 
   .offset-btn {
-    width: 20px;
-    height: 20px;
-    font-size: 11px;
-  }
-
-  /* OHLC Bar on Mobile */
-  .ohlc-display {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    overflow-x: auto;
-    white-space: nowrap;
-    scrollbar-width: none;
-    padding: 2px 0;
-  }
-  .ohlc-display::-webkit-scrollbar {
-    display: none;
-  }
-
-  .candle-countdown {
-    padding: 2px 6px;
-    font-size: 11px;
-    margin-left: auto;
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
   }
 
   /* Header action buttons */
   .header-actions {
-    gap: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .user-badge {
+    padding: 2px 5px;
+    font-size: 10px;
   }
 
   .action-btn {
-    padding: 4px 8px;
+    padding: 4px 6px;
     font-size: 11px;
   }
 
@@ -968,47 +1038,90 @@ body {
   /* Order Ribbon on Mobile */
   .order-ribbon {
     height: auto;
-    min-height: 38px;
-    padding: 4px 10px;
-    gap: 8px;
+    min-height: 34px;
+    padding: 3px 8px;
+    gap: 6px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+
+  .order-ribbon::-webkit-scrollbar {
+    display: none;
   }
 
   .quote-box {
-    padding: 4px 8px;
-    font-size: 12px;
+    padding: 3px 6px;
+    font-size: 11px;
+    gap: 4px;
+  }
+
+  .quote-spread {
+    font-size: 9.5px;
+    padding: 0 4px;
+  }
+
+  /* OHLC Bar on Mobile */
+  .ohlc-display {
+    display: flex;
+    align-items: center;
     gap: 6px;
+    font-size: 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    padding: 2px 0;
+  }
+  .ohlc-display::-webkit-scrollbar {
+    display: none;
+  }
+
+  .candle-countdown {
+    padding: 2px 5px;
+    font-size: 10px;
+    margin-left: auto;
   }
 
   .feature-pills {
     display: none;
   }
 
-  /* Main Container on Mobile */
+  /* Main Container on Mobile: Flexibly occupies middle height */
   .main-container {
     flex: 1;
+    min-height: 0;
     position: relative;
     overflow: hidden;
-    height: calc(100dvh - 140px);
+    height: auto;
   }
 
   .chart-wrapper {
     width: 100%;
     height: 100%;
+    position: relative;
+  }
+
+  .chart-wrapper.mobile-hidden {
+    display: none !important;
+  }
+
+  #chart-container {
+    width: 100%;
+    height: 100%;
   }
 
   .chart-watermark {
-    top: 10px;
-    left: 10px;
+    top: 8px;
+    left: 8px;
   }
 
   .watermark-title {
-    font-size: 11px;
+    font-size: 10.5px;
   }
 
   .watermark-sub {
-    font-size: 10px;
+    font-size: 9.5px;
   }
 
   .zone-tag {
@@ -1030,16 +1143,43 @@ body {
     right: 0;
     bottom: 0;
     width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
     height: 100% !important;
     z-index: 25;
     background-color: var(--bg-main);
     padding: 12px;
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     display: none;
   }
 
   .sidebar.mobile-active {
     display: flex !important;
+  }
+
+  .sidebar-card {
+    width: 100%;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+
+  .target-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .target-item {
+    padding: 7px 9px;
+  }
+
+  .target-item span:first-child {
+    font-size: 10px;
+  }
+
+  .target-item span:last-child {
+    font-size: 11.5px;
   }
 
   /* Status Footer */
@@ -1052,8 +1192,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-around;
-    height: 52px;
-    background-color: #0d1117;
+    height: 50px;
+    background-color: #0b0e14;
     border-top: 1px solid var(--border-color);
     padding-bottom: env(safe-area-inset-bottom, 0px);
     z-index: 30;
@@ -1095,7 +1235,7 @@ body {
   }
 
   .modal-box {
-    width: 94%;
+    width: 95%;
     max-height: 85vh;
   }
 }

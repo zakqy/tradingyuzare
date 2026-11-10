@@ -182,13 +182,26 @@ function initChart() {
   });
 
   window.addEventListener('resize', () => {
+    const isDesktop = window.innerWidth > 960;
+    const sidebarEl = document.querySelector('.sidebar');
+    const chartWrapperEl = document.querySelector('.chart-wrapper');
+    if (isDesktop) {
+      if (sidebarEl) sidebarEl.classList.remove('mobile-active');
+      if (chartWrapperEl) {
+        chartWrapperEl.classList.remove('mobile-hidden');
+        chartWrapperEl.style.display = '';
+      }
+    }
     if (state.chart) {
-      state.chart.applyOptions({
-        width: container.clientWidth,
-        height: container.clientHeight,
-      });
-      renderPendingZonesOverlay();
-      renderSignalBadges();
+      const c = document.getElementById('chart-container');
+      if (c && c.clientWidth > 0 && c.clientHeight > 0) {
+        state.chart.applyOptions({
+          width: c.clientWidth,
+          height: c.clientHeight,
+        });
+        renderPendingZonesOverlay();
+        renderSignalBadges();
+      }
     }
   });
 
@@ -1310,33 +1323,47 @@ function setupEventListeners() {
 
       if (tab === 'chart') {
         if (sidebar) sidebar.classList.remove('mobile-active');
-        if (chartWrapper) chartWrapper.style.display = 'block';
+        if (chartWrapper) {
+          chartWrapper.classList.remove('mobile-hidden');
+          chartWrapper.style.display = '';
+        }
         setTimeout(() => {
           if (state.chart) {
             const container = document.getElementById('chart-container');
-            state.chart.applyOptions({
-              width: container.clientWidth,
-              height: container.clientHeight,
-            });
-            renderPendingZonesOverlay();
-            renderSignalBadges();
+            if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+              state.chart.applyOptions({
+                width: container.clientWidth,
+                height: container.clientHeight,
+              });
+              renderPendingZonesOverlay();
+              renderSignalBadges();
+            }
           }
         }, 60);
       } else if (tab === 'signals') {
-        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (chartWrapper) {
+          chartWrapper.classList.add('mobile-hidden');
+          chartWrapper.style.display = 'none';
+        }
         if (sidebar) {
           sidebar.classList.add('mobile-active');
           sidebar.scrollTop = 0;
         }
       } else if (tab === 'pending') {
-        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (chartWrapper) {
+          chartWrapper.classList.add('mobile-hidden');
+          chartWrapper.style.display = 'none';
+        }
         if (sidebar) {
           sidebar.classList.add('mobile-active');
           const pzEl = document.getElementById('pending-zones-list');
           if (pzEl) pzEl.scrollIntoView({ behavior: 'smooth' });
         }
       } else if (tab === 'stats') {
-        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (chartWrapper) {
+          chartWrapper.classList.add('mobile-hidden');
+          chartWrapper.style.display = 'none';
+        }
         if (sidebar) {
           sidebar.classList.add('mobile-active');
           const statsEl = document.querySelector('.stats-grid');
@@ -1350,7 +1377,10 @@ function setupEventListeners() {
           mobileNavBtns.forEach(b => b.classList.remove('active'));
           chartBtn.classList.add('active');
           if (sidebar) sidebar.classList.remove('mobile-active');
-          if (chartWrapper) chartWrapper.style.display = 'block';
+          if (chartWrapper) {
+            chartWrapper.classList.remove('mobile-hidden');
+            chartWrapper.style.display = '';
+          }
         }
       }
     });
