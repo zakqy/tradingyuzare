@@ -627,17 +627,63 @@ async function syncTradingViewOandaPrice() {
   return null;
 }
 
+// Default candle limits per timeframe (menampilkan riwayat berhari-hari sebelumnya)
+const TF_CANDLE_LIMITS = {
+  '1m': 2500,   // ~42 jam (hampir 2 hari riwayat)
+  '5m': 1500,   // ~5.2 hari (1 minggu trading)
+  '15m': 1200,  // ~12.5 hari (2 minggu trading)
+  '30m': 1000,  // ~20.8 hari (hampir 1 bulan)
+  '1h': 1000,   // ~41.6 hari (> 1 bulan)
+  '4h': 800,    // ~133 hari (> 4 bulan)
+  '1d': 600,    // ~600 hari (> 1.5 tahun)
+  '1w': 400,    // ~400 minggu (> 7.5 tahun)
+};
+
+// Helper fetch Binance klines multi-batch untuk mencakup riwayat hari-hari sebelumnya di browser / GitHub Pages
+async function fetchBinanceKlinesClient(binanceSym, interval, targetLimit = 2500) {
+  let allRaw = [];
+  let needed = targetLimit;
+  let endTime = null;
+  const maxBatches = targetLimit > 1000 ? 3 : 1;
+
+  for (let b = 0; b < maxBatches && needed > 0; b++) {
+    const batchSize = Math.min(needed, 1000);
+    let url = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${interval}&limit=${batchSize}`;
+    if (endTime) {
+      url += `&endTime=${endTime}`;
+    }
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) break;
+      const batch = await resp.json();
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      if (allRaw.length === 0) {
+        allRaw = batch;
+      } else {
+        allRaw = batch.concat(allRaw);
+      }
+      endTime = batch[0][0] - 1;
+      needed -= batch.length;
+      if (batch.length < batchSize) break;
+    } catch (e) {
+      break;
+    }
+  }
+  return allRaw;
+}
+
 // Fetch Market Data (Supports Local API & Direct Binance API for GitHub Pages)
 async function loadMarketData() {
   showToast('🔄 Memuat analisa YUZARE...', '⏳');
   try {
     let data = null;
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+    const targetLimit = TF_CANDLE_LIMITS[state.timeframe] || 2000;
 
     if (isLocal) {
       try {
         const tpStr = (state.tp_targets || []).join(',');
-        const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
+        const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&limit=${targetLimit}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
         const resp = await fetch(url);
         if (resp.ok) data = await resp.json();
       } catch (e) {
@@ -651,10 +697,7 @@ async function loadMarketData() {
         await syncTradingViewOandaPrice();
       }
       const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
-      const klineLimit = state.timeframe === '1m' ? 350 : 250;
-      const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${state.timeframe}&limit=${klineLimit}`;
-      const resp = await fetch(klineUrl);
-      const raw = await resp.json();
+      const raw = await fetchBinanceKlinesClient(binanceSym, state.timeframe, targetLimit);
 
       // Auto-calibrate offset to match TradingView OANDA XAUUSD exactly
       if (state.symbol === 'XAUUSD' && state.tvOandaPrice && raw.length > 0) {
@@ -760,11 +803,9 @@ async function loadAllTimeframeStats(force = false) {
           return;
         }
         try {
-          const klineLimit = tf === '1m' ? 350 : 250;
-          const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${tf}&limit=${klineLimit}`;
-          const resp = await fetch(klineUrl);
-          if (!resp.ok) return;
-          const raw = await resp.json();
+          const klineLimit = TF_CANDLE_LIMITS[tf] || 1000;
+          const raw = await fetchBinanceKlinesClient(binanceSym, tf, klineLimit);
+          if (!raw || raw.length === 0) return;
           let rawCandles = raw.map(x => ({
             time: Math.floor(x[0] / 1000),
             open: Math.round((parseFloat(x[1]) + offset) * 100) / 100,
@@ -801,7 +842,8 @@ async function refreshSignalsSilently() {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
     if (isLocal) {
       const tpStr = (state.tp_targets || []).join(',');
-      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
+      const targetLimit = TF_CANDLE_LIMITS[state.timeframe] || 2000;
+      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&limit=${targetLimit}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();

@@ -56,50 +56,85 @@ TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
 # Global configurable offsets
 broker_offsets: Dict[str, float] = {k: v.get("default_offset", 0.0) for k, v in PAIR_MAP.items()}
 
-def fetch_binance_klines(symbol: str, interval: str, limit: int = 300, offset: float = 0.0) -> List[Dict[str, Any]]:
-    """Fetch candlestick data from Binance Vision API dengan kalibrasi offset MT5"""
+# Default candle limits per timeframe untuk menampilkan riwayat berhari-hari sebelumnya
+DEFAULT_TF_LIMITS = {
+    "1m": 2500,   # ~42 jam (hampir 2 hari penuh)
+    "5m": 1500,   # ~5.2 hari (1 minggu trading penuh)
+    "15m": 1200,  # ~12.5 hari (2 minggu trading)
+    "30m": 1000,  # ~20.8 hari (hampir 1 bulan)
+    "1h": 1000,   # ~41.6 hari (> 1 bulan)
+    "4h": 800,    # ~133 hari (> 4 bulan)
+    "1d": 600,    # ~600 hari (> 1.5 tahun)
+    "1w": 400,    # ~400 minggu (> 7.5 tahun)
+}
+
+def fetch_binance_klines(symbol: str, interval: str, limit: int = 2500, offset: float = 0.0) -> List[Dict[str, Any]]:
+    """Fetch candlestick data from Binance Vision API dengan multi-batch pagination untuk menampilkan riwayat hari-hari sebelumnya"""
     binance_symbol = PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT")
-    fetch_limit = limit + 80 if interval == "1m" else limit
-    url = f"https://data-api.binance.vision/api/v3/klines?symbol={binance_symbol}&interval={interval}&limit={fetch_limit}"
-    
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "application/json"
-        }
-        resp = requests.get(url, timeout=7, headers=headers)
-        if resp.status_code == 200:
-            raw = resp.json()
-            candles = []
-            total_items = len(raw)
-            for idx, item in enumerate(raw):
-                # [open_time, open, high, low, close, volume, close_time, ...]
-                t = int(item[0] // 1000) # seconds for Lightweight Charts
-                o = round(float(item[1]) + offset, 2)
-                h = round(float(item[2]) + offset, 2)
-                l = round(float(item[3]) + offset, 2)
-                c = round(float(item[4]) + offset, 2)
-                v = float(item[5])
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    }
 
-                # Hilangkan bar dummy datar (high == low / 0 movement) pada 1m agar chart mulus seperti MT5
-                if interval == "1m" and idx < total_items - 1 and h <= l:
-                    continue
+    raw = []
+    needed = limit
+    end_time = None
 
-                candles.append({
-                    "time": t,
-                    "open": o,
-                    "high": h,
-                    "low": l,
-                    "close": c,
-                    "volume": v
-                })
-            return candles[-limit:]
-        else:
-            logger.warning(f"Binance Vision returned status {resp.status_code}")
-    except Exception as e:
-        logger.error(f"Error fetching klines: {e}")
-    
-    return []
+    # Ambil hingga 3 batch (maksimal 3000 candle) untuk mencakup 2+ hari riwayat
+    max_batches = 3 if limit > 1000 else 1
+    for _ in range(max_batches):
+        if needed <= 0:
+            break
+        batch_size = min(needed, 1000)
+        url = f"https://data-api.binance.vision/api/v3/klines?symbol={binance_symbol}&interval={interval}&limit={batch_size}"
+        if end_time:
+            url += f"&endTime={end_time}"
+        try:
+            resp = requests.get(url, timeout=7, headers=headers)
+            if resp.status_code != 200:
+                break
+            batch = resp.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            if not raw:
+                raw = batch
+            else:
+                raw = batch + raw
+            end_time = int(batch[0][0]) - 1
+            needed -= len(batch)
+            if len(batch) < batch_size:
+                break
+        except Exception as e:
+            logger.error(f"Error fetching klines batch: {e}")
+            break
+
+    if not raw:
+        return []
+
+    candles = []
+    total_items = len(raw)
+    for idx, item in enumerate(raw):
+        # [open_time, open, high, low, close, volume, close_time, ...]
+        t = int(item[0] // 1000) # seconds for Lightweight Charts
+        o = round(float(item[1]) + offset, 2)
+        h = round(float(item[2]) + offset, 2)
+        l = round(float(item[3]) + offset, 2)
+        c = round(float(item[4]) + offset, 2)
+        v = float(item[5])
+
+        # Hilangkan bar dummy datar (high == low / 0 movement) pada 1m agar chart mulus seperti MT5
+        if interval == "1m" and idx < total_items - 1 and h <= l:
+            continue
+
+        candles.append({
+            "time": t,
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "volume": v
+        })
+    return candles[-limit:]
 
 def prepend_tv_header(st: str) -> str:
     return f"~m~{len(st)}~m~{st}"
@@ -110,7 +145,7 @@ def construct_tv_msg(func: str, args: list) -> str:
 def generate_tv_session() -> str:
     return "cs_" + "".join(random.choices(string.ascii_letters + string.digits, k=12))
 
-async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m", limit: int = 300) -> List[Dict[str, Any]]:
+async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m", limit: int = 2500) -> List[Dict[str, Any]]:
     """Mengambil candlestick asli langsung dari TradingView WebSocket (OANDA:XAUUSD)"""
     tf_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D", "1w": "W"}
     res_itv = tf_map.get(interval, "1")
@@ -118,7 +153,7 @@ async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1
     headers = {"Origin": "https://www.tradingview.com", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     try:
-        async with websockets.connect(uri, additional_headers=headers, close_timeout=3, ping_timeout=5) as ws:
+        async with websockets.connect(uri, additional_headers=headers, close_timeout=4, ping_timeout=6) as ws:
             await ws.recv()
             cs = generate_tv_session()
             await ws.send(construct_tv_msg("set_auth_token", ["unauthorized_user_token"]))
@@ -127,8 +162,8 @@ async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1
             await ws.send(construct_tv_msg("resolve_symbol", [cs, "sds_sym_1", "=" + sym_spec]))
             await ws.send(construct_tv_msg("create_series", [cs, "sds_1", "s1", "sds_sym_1", res_itv, limit]))
 
-            for _ in range(15):
-                raw = await asyncio.wait_for(ws.recv(), timeout=4.0)
+            for _ in range(20):
+                raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
                 if "timescale_update" in raw:
                     parts = raw.split("~m~")
                     for p in parts:
@@ -153,7 +188,7 @@ async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1
         logger.warning(f"TradingView WS fetch error for {symbol}: {e}")
     return []
 
-def fetch_tradingview_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m", limit: int = 300) -> List[Dict[str, Any]]:
+def fetch_tradingview_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m", limit: int = 2500) -> List[Dict[str, Any]]:
     try:
         loop = asyncio.new_event_loop()
         res = loop.run_until_complete(async_fetch_tv_klines(symbol, interval, limit))
@@ -163,7 +198,7 @@ def fetch_tradingview_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m",
         logger.warning(f"TradingView sync wrapper error: {e}")
         return []
 
-def fetch_market_klines(symbol: str, interval: str, limit: int = 300, offset: float = 0.0) -> List[Dict[str, Any]]:
+def fetch_market_klines(symbol: str, interval: str, limit: int = 2500, offset: float = 0.0) -> List[Dict[str, Any]]:
     """Mengambil candlestick OANDA:XAUUSD dari TradingView atau fallback Binance Vision"""
     if symbol == "XAUUSD":
         tv_candles = fetch_tradingview_klines("OANDA:XAUUSD", interval, limit)
@@ -202,7 +237,7 @@ def update_offset(symbol: str = Query("XAUUSD"), offset: float = Query(8.0)):
 def get_analysis(
     symbol: str = Query("XAUUSD", description="Symbol e.g. XAUUSD, BTCUSD"),
     timeframe: str = Query("1m", description="Timeframe e.g. 1m, 5m, 1h, 1d"),
-    limit: int = Query(250, ge=50, le=1000),
+    limit: Optional[int] = Query(None, ge=50, le=5000),
     sl_pips: float = Query(30.0, description="Stop Loss in pips"),
     tp_targets: Optional[str] = Query(None, description="Comma-separated TP pips e.g. 30,50,70,100"),
     tp1_pips: float = Query(30.0, description="TP1 in pips"),
@@ -219,7 +254,11 @@ def get_analysis(
     """
     symbol = str(symbol.default if hasattr(symbol, 'default') else symbol).upper()
     timeframe = str(timeframe.default if hasattr(timeframe, 'default') else timeframe)
-    limit = int(limit.default if hasattr(limit, 'default') else limit)
+    raw_lim = limit.default if hasattr(limit, 'default') else limit
+    if raw_lim is None or raw_lim == 250:
+        limit = DEFAULT_TF_LIMITS.get(timeframe, 2000)
+    else:
+        limit = int(raw_lim)
     sl_pips = float(sl_pips.default if hasattr(sl_pips, 'default') else sl_pips)
     tp1_pips = float(tp1_pips.default if hasattr(tp1_pips, 'default') else tp1_pips)
     tp2_pips = float(tp2_pips.default if hasattr(tp2_pips, 'default') else tp2_pips)
@@ -301,7 +340,8 @@ def get_all_stats(
 
     pip_unit = PAIR_MAP.get(symbol, {}).get("pip", 0.1)
     for tf in TIMEFRAMES:
-        candles = fetch_market_klines(symbol, tf, limit=250, offset=offset)
+        tf_limit = DEFAULT_TF_LIMITS.get(tf, 1000)
+        candles = fetch_market_klines(symbol, tf, limit=tf_limit, offset=offset)
         if candles:
             res = engine.analyze(candles, sl_pips=sl_pips, tp_list=tp_list, pip_unit=pip_unit)
             st = res.get("stats", {})
