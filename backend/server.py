@@ -41,6 +41,7 @@ engine = YUZARE_Engine()
 # Pair mapping dengan offset kalibrasi default untuk menyesuaikan dengan broker MT5
 PAIR_MAP = {
     "XAUUSD": {"binance": "PAXGUSDT", "name": "Gold Spot / U.S. Dollar", "type": "Metals", "digits": 2, "pip": 0.1, "default_offset": 8.0},
+    "USA100": {"binance": "QQQBUSDT", "name": "USA100 (NASDAQ 100)", "type": "Indices", "digits": 2, "pip": 0.1, "default_offset": 0.0},
     "BTCUSD": {"binance": "BTCUSDT", "name": "Bitcoin / Tether", "type": "Crypto", "digits": 2, "pip": 1.0, "default_offset": 0.0},
     "ETHUSD": {"binance": "ETHUSDT", "name": "Ethereum / Tether", "type": "Crypto", "digits": 2, "pip": 0.1, "default_offset": 0.0},
     "SOLUSD": {"binance": "SOLUSDT", "name": "Solana / Tether", "type": "Crypto", "digits": 2, "pip": 0.01, "default_offset": 0.0},
@@ -60,7 +61,11 @@ def fetch_binance_klines(symbol: str, interval: str, limit: int = 300, offset: f
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={binance_symbol}&interval={interval}&limit={fetch_limit}"
     
     try:
-        resp = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json"
+        }
+        resp = requests.get(url, timeout=7, headers=headers)
         if resp.status_code == 200:
             raw = resp.json()
             candles = []
@@ -153,6 +158,7 @@ def get_analysis(
     else:
         tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
 
+    pip_unit = PAIR_MAP.get(symbol, {}).get("pip", 0.1)
     result = engine.analyze(
         candles, 
         sl_pips=sl_pips, 
@@ -160,7 +166,8 @@ def get_analysis(
         tp1_pips=tp1_pips, 
         tp2_pips=tp2_pips, 
         tp3_pips=tp3_pips, 
-        tp4_pips=tp4_pips
+        tp4_pips=tp4_pips,
+        pip_unit=pip_unit
     )
     result["symbol"] = symbol
     result["timeframe"] = timeframe
@@ -200,10 +207,11 @@ def get_all_stats(
     tot_tp = 0
     tot_sl = 0
 
+    pip_unit = PAIR_MAP.get(symbol, {}).get("pip", 0.1)
     for tf in TIMEFRAMES:
         candles = fetch_binance_klines(symbol, tf, limit=250, offset=offset)
         if candles:
-            res = engine.analyze(candles, sl_pips=sl_pips, tp_list=tp_list)
+            res = engine.analyze(candles, sl_pips=sl_pips, tp_list=tp_list, pip_unit=pip_unit)
             st = res.get("stats", {})
             by_tf[tf] = st
             tot_signals += st.get("total_signals", 0)

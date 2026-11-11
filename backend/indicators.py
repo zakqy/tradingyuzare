@@ -192,7 +192,7 @@ class YUZARE_Engine:
                 })
 
         current_price = closes[-1]
-        pip_unit = 0.1 if current_price > 1000 else 0.0001
+        pip_unit = kwargs.get("pip_unit", (0.1 if current_price > 200 else 0.0001))
 
         # Hanya ambil Pending Zones yang belum pernah tersentuh / tertembus oleh candle setelahnya
         untouched_sh = []

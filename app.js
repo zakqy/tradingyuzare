@@ -109,6 +109,7 @@ function applyTimeframeSettings(tf) {
 
 const PAIR_MAP = {
   XAUUSD: 'PAXGUSDT',
+  USA100: 'QQQBUSDT',
   BTCUSD: 'BTCUSDT',
   ETHUSD: 'ETHUSDT',
   SOLUSD: 'SOLUSDT',
@@ -307,7 +308,7 @@ function initChart() {
 }
 
 function getPipUnit(symbol, price) {
-  if (symbol === 'XAUUSD') return 0.1; // 1 pip = $0.10 (30p = $3.00, 50p = $5.00, 70p = $7.00, 100p = $10.00)
+  if (symbol === 'XAUUSD' || symbol === 'USA100') return 0.1; // 1 pip = $0.10
   if (symbol === 'BTCUSD') return 1.0;
   if (symbol === 'ETHUSD') return 0.1;
   if (symbol === 'SOLUSD') return 0.01;
@@ -1585,6 +1586,7 @@ function setupEventListeners() {
     const saved = localStorage.getItem(`offset_${state.symbol}`);
     state.offset = saved !== null ? parseFloat(saved) : (state.symbol === 'XAUUSD' ? 8.5 : 0.0);
     updateOffsetDisplay();
+    state.all_tf_stats = {};
     loadMarketData();
   });
 
