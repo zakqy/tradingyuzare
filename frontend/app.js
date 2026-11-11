@@ -592,6 +592,41 @@ function computeClientSideIndicators(candles, tf = state.timeframe) {
   };
 }
 
+// TradingView OANDA Spot Gold Real-Time Price Fetcher
+async function syncTradingViewOandaPrice() {
+  if (state.symbol !== 'XAUUSD') return null;
+  try {
+    const resp = await fetch('https://scanner.tradingview.com/cfd/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbols: { tickers: ['OANDA:XAUUSD'] },
+        columns: ['close', 'open', 'high', 'low', 'change']
+      })
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      if (json.data && json.data.length > 0) {
+        const tvData = json.data[0].d;
+        const tvClose = parseFloat(tvData[0]);
+        if (tvClose > 2000) {
+          state.tvOandaPrice = tvClose;
+          const sellEl = document.getElementById('quote-sell-price');
+          const buyEl = document.getElementById('quote-buy-price');
+          const spreadEl = document.getElementById('spread-val');
+          if (sellEl) sellEl.textContent = tvClose.toFixed(2);
+          if (buyEl) buyEl.textContent = (tvClose + 0.35).toFixed(2);
+          if (spreadEl) spreadEl.textContent = '0.35';
+          return tvClose;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('TradingView scanner sync error:', e);
+  }
+  return null;
+}
+
 // Fetch Market Data (Supports Local API & Direct Binance API for GitHub Pages)
 async function loadMarketData() {
   showToast('🔄 Memuat analisa YUZARE...', '⏳');
@@ -612,11 +647,25 @@ async function loadMarketData() {
 
     // Direct Binance Vision API fallback for GitHub Pages!
     if (!data) {
+      if (state.symbol === 'XAUUSD') {
+        await syncTradingViewOandaPrice();
+      }
       const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
       const klineLimit = state.timeframe === '1m' ? 350 : 250;
       const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${state.timeframe}&limit=${klineLimit}`;
       const resp = await fetch(klineUrl);
       const raw = await resp.json();
+
+      // Auto-calibrate offset to match TradingView OANDA XAUUSD exactly
+      if (state.symbol === 'XAUUSD' && state.tvOandaPrice && raw.length > 0) {
+        const lastRaw = parseFloat(raw[raw.length - 1][4]);
+        if (lastRaw > 2000) {
+          state.offset = Math.round((state.tvOandaPrice - lastRaw) * 100) / 100;
+          localStorage.setItem('offset_XAUUSD', state.offset);
+          updateOffsetDisplay();
+        }
+      }
+
       const offset = state.symbol === 'XAUUSD' ? state.offset : 0.0;
       let rawCandles = raw.map(x => ({
         time: Math.floor(x[0] / 1000),
@@ -1514,6 +1563,13 @@ function startTickerHeartbeat() {
             if (d.price && d.price > 0) applyPriceTick(d.price);
           }
         } else {
+          if (state.symbol === 'XAUUSD') {
+            const tvPrice = await syncTradingViewOandaPrice();
+            if (tvPrice && tvPrice > 2000) {
+              applyPriceTick(tvPrice);
+              return;
+            }
+          }
           const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
           const resp = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSym}`);
           if (resp.ok) {
@@ -1582,7 +1638,7 @@ function setupEventListeners() {
   // Pair Selector
   document.getElementById('pair-selector').addEventListener('change', (e) => {
     state.symbol = e.target.value;
-    document.getElementById('wm-symbol-name').textContent = e.target.options[e.target.selectedIndex].text;
+    document.getElementById('wm-symbol-name').textContent = state.symbol === 'XAUUSD' ? 'XAUUSD · OANDA' : e.target.options[e.target.selectedIndex].text;
     const saved = localStorage.getItem(`offset_${state.symbol}`);
     state.offset = saved !== null ? parseFloat(saved) : (state.symbol === 'XAUUSD' ? 8.5 : 0.0);
     updateOffsetDisplay();

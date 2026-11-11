@@ -8,6 +8,8 @@ import sys
 import json
 import asyncio
 import logging
+import random
+import string
 from typing import Dict, Any, List, Optional
 
 # Pastikan root directory terdaftar di sys.path agar import selalu berhasil
@@ -40,7 +42,7 @@ engine = YUZARE_Engine()
 
 # Pair mapping dengan offset kalibrasi default untuk menyesuaikan dengan broker MT5
 PAIR_MAP = {
-    "XAUUSD": {"binance": "PAXGUSDT", "name": "Gold Spot / U.S. Dollar", "type": "Metals", "digits": 2, "pip": 0.1, "default_offset": 8.0},
+    "XAUUSD": {"binance": "PAXGUSDT", "tv_symbol": "OANDA:XAUUSD", "name": "Emas / Dollar A.S. (XAUUSD · OANDA)", "type": "Metals", "digits": 2, "pip": 0.1, "default_offset": 0.0},
     "USA100": {"binance": "QQQBUSDT", "name": "USA100 (NASDAQ 100)", "type": "Indices", "digits": 2, "pip": 0.1, "default_offset": 0.0},
     "BTCUSD": {"binance": "BTCUSDT", "name": "Bitcoin / Tether", "type": "Crypto", "digits": 2, "pip": 1.0, "default_offset": 0.0},
     "ETHUSD": {"binance": "ETHUSDT", "name": "Ethereum / Tether", "type": "Crypto", "digits": 2, "pip": 0.1, "default_offset": 0.0},
@@ -99,6 +101,82 @@ def fetch_binance_klines(symbol: str, interval: str, limit: int = 300, offset: f
     
     return []
 
+def prepend_tv_header(st: str) -> str:
+    return f"~m~{len(st)}~m~{st}"
+
+def construct_tv_msg(func: str, args: list) -> str:
+    return prepend_tv_header(json.dumps({"m": func, "p": args}))
+
+def generate_tv_session() -> str:
+    return "cs_" + "".join(random.choices(string.ascii_letters + string.digits, k=12))
+
+async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m", limit: int = 300) -> List[Dict[str, Any]]:
+    """Mengambil candlestick asli langsung dari TradingView WebSocket (OANDA:XAUUSD)"""
+    tf_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D", "1w": "W"}
+    res_itv = tf_map.get(interval, "1")
+    uri = "wss://data.tradingview.com/socket.io/websocket"
+    headers = {"Origin": "https://www.tradingview.com", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    try:
+        async with websockets.connect(uri, additional_headers=headers, close_timeout=3, ping_timeout=5) as ws:
+            await ws.recv()
+            cs = generate_tv_session()
+            await ws.send(construct_tv_msg("set_auth_token", ["unauthorized_user_token"]))
+            await ws.send(construct_tv_msg("chart_create_session", [cs, ""]))
+            sym_spec = json.dumps({"symbol": symbol, "adjustment": "splits"})
+            await ws.send(construct_tv_msg("resolve_symbol", [cs, "sds_sym_1", "=" + sym_spec]))
+            await ws.send(construct_tv_msg("create_series", [cs, "sds_1", "s1", "sds_sym_1", res_itv, limit]))
+
+            for _ in range(15):
+                raw = await asyncio.wait_for(ws.recv(), timeout=4.0)
+                if "timescale_update" in raw:
+                    parts = raw.split("~m~")
+                    for p in parts:
+                        if p.startswith("{"):
+                            d = json.loads(p)
+                            if d.get("m") == "timescale_update":
+                                series = d.get("p", [None, {}])[1].get("sds_1", {}).get("s", [])
+                                candles = []
+                                for row in series:
+                                    val = row["v"]
+                                    candles.append({
+                                        "time": int(val[0]),
+                                        "open": round(float(val[1]), 2),
+                                        "high": round(float(val[2]), 2),
+                                        "low": round(float(val[3]), 2),
+                                        "close": round(float(val[4]), 2),
+                                        "volume": round(float(val[5]), 2)
+                                    })
+                                if candles:
+                                    return candles
+    except Exception as e:
+        logger.warning(f"TradingView WS fetch error for {symbol}: {e}")
+    return []
+
+def fetch_tradingview_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m", limit: int = 300) -> List[Dict[str, Any]]:
+    try:
+        loop = asyncio.new_event_loop()
+        res = loop.run_until_complete(async_fetch_tv_klines(symbol, interval, limit))
+        loop.close()
+        return res
+    except Exception as e:
+        logger.warning(f"TradingView sync wrapper error: {e}")
+        return []
+
+def fetch_market_klines(symbol: str, interval: str, limit: int = 300, offset: float = 0.0) -> List[Dict[str, Any]]:
+    """Mengambil candlestick OANDA:XAUUSD dari TradingView atau fallback Binance Vision"""
+    if symbol == "XAUUSD":
+        tv_candles = fetch_tradingview_klines("OANDA:XAUUSD", interval, limit)
+        if tv_candles and len(tv_candles) >= 20:
+            if offset != 0.0:
+                for c in tv_candles:
+                    c["open"] = round(c["open"] + offset, 2)
+                    c["high"] = round(c["high"] + offset, 2)
+                    c["low"] = round(c["low"] + offset, 2)
+                    c["close"] = round(c["close"] + offset, 2)
+            return tv_candles
+    return fetch_binance_klines(symbol, interval, limit, offset)
+
 @app.get("/api/pairs")
 def get_pairs():
     """Daftar pair yang didukung"""
@@ -139,14 +217,22 @@ def get_analysis(
     Mengambil data candlestick dan menjalankan YUZARE Indicator Engine.
     Menghasilkan candle colored, buy/sell zero-repaint signals, pending zones, dan dual signal levels.
     """
-    symbol = symbol.upper()
+    symbol = str(symbol.default if hasattr(symbol, 'default') else symbol).upper()
+    timeframe = str(timeframe.default if hasattr(timeframe, 'default') else timeframe)
+    limit = int(limit.default if hasattr(limit, 'default') else limit)
+    sl_pips = float(sl_pips.default if hasattr(sl_pips, 'default') else sl_pips)
+    tp1_pips = float(tp1_pips.default if hasattr(tp1_pips, 'default') else tp1_pips)
+    tp2_pips = float(tp2_pips.default if hasattr(tp2_pips, 'default') else tp2_pips)
+    tp3_pips = float(tp3_pips.default if hasattr(tp3_pips, 'default') else tp3_pips)
+    tp4_pips = float(tp4_pips.default if hasattr(tp4_pips, 'default') else tp4_pips)
+
     if symbol not in PAIR_MAP:
         symbol = "XAUUSD"
     if timeframe not in TIMEFRAMES:
         timeframe = "1m"
 
     offset = broker_offsets.get(symbol, 0.0)
-    candles = fetch_binance_klines(symbol, timeframe, limit, offset=offset)
+    candles = fetch_market_klines(symbol, timeframe, limit, offset=offset)
     if not candles:
         return JSONResponse(status_code=502, content={"error": "Failed to fetch market data"})
 
@@ -189,7 +275,13 @@ def get_all_stats(
     """
     Menghitung statistik performa kumulatif dari seluruh timeframe (1M sampai 1W).
     """
-    symbol = symbol.upper()
+    symbol = str(symbol.default if hasattr(symbol, 'default') else symbol).upper()
+    sl_pips = float(sl_pips.default if hasattr(sl_pips, 'default') else sl_pips)
+    tp1_pips = float(tp1_pips.default if hasattr(tp1_pips, 'default') else tp1_pips)
+    tp2_pips = float(tp2_pips.default if hasattr(tp2_pips, 'default') else tp2_pips)
+    tp3_pips = float(tp3_pips.default if hasattr(tp3_pips, 'default') else tp3_pips)
+    tp4_pips = float(tp4_pips.default if hasattr(tp4_pips, 'default') else tp4_pips)
+
     if symbol not in PAIR_MAP:
         symbol = "XAUUSD"
     offset = broker_offsets.get(symbol, 0.0)
@@ -209,7 +301,7 @@ def get_all_stats(
 
     pip_unit = PAIR_MAP.get(symbol, {}).get("pip", 0.1)
     for tf in TIMEFRAMES:
-        candles = fetch_binance_klines(symbol, tf, limit=250, offset=offset)
+        candles = fetch_market_klines(symbol, tf, limit=250, offset=offset)
         if candles:
             res = engine.analyze(candles, sl_pips=sl_pips, tp_list=tp_list, pip_unit=pip_unit)
             st = res.get("stats", {})
@@ -321,6 +413,64 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         pass
 
     running = True
+
+    async def listen_tradingview():
+        nonlocal running
+        tf_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D", "1w": "W"}
+        res_itv = tf_map.get(timeframe, "1")
+        uri = "wss://data.tradingview.com/socket.io/websocket"
+        headers = {"Origin": "https://www.tradingview.com", "User-Agent": "Mozilla/5.0"}
+        while running:
+            try:
+                async with websockets.connect(uri, additional_headers=headers) as tws:
+                    await tws.recv()
+                    cs = generate_tv_session()
+                    await tws.send(construct_tv_msg("set_auth_token", ["unauthorized_user_token"]))
+                    await tws.send(construct_tv_msg("chart_create_session", [cs, ""]))
+                    sym_spec = json.dumps({"symbol": "OANDA:XAUUSD", "adjustment": "splits"})
+                    await tws.send(construct_tv_msg("resolve_symbol", [cs, "sds_sym_1", "=" + sym_spec]))
+                    await tws.send(construct_tv_msg("create_series", [cs, "sds_1", "s1", "sds_sym_1", res_itv, 10]))
+                    while running:
+                        msg = await tws.recv()
+                        cur_offset = broker_offsets.get(symbol, 0.0)
+                        if "du" in msg or "timescale_update" in msg:
+                            parts = msg.split("~m~")
+                            for p in parts:
+                                if p.startswith("{"):
+                                    d = json.loads(p)
+                                    s_data = d.get("p", [None, {}])[1].get("sds_1", {}).get("s", [])
+                                    if s_data:
+                                        last_bar = s_data[-1]["v"]
+                                        t_bar = int(last_bar[0])
+                                        o_bar = round(float(last_bar[1]) + cur_offset, 2)
+                                        h_bar = round(float(last_bar[2]) + cur_offset, 2)
+                                        l_bar = round(float(last_bar[3]) + cur_offset, 2)
+                                        c_bar = round(float(last_bar[4]) + cur_offset, 2)
+                                        await websocket.send_text(json.dumps({
+                                            "type": "kline",
+                                            "symbol": symbol,
+                                            "timeframe": timeframe,
+                                            "time": t_bar,
+                                            "open": o_bar,
+                                            "high": h_bar,
+                                            "low": l_bar,
+                                            "close": c_bar,
+                                            "volume": round(float(last_bar[5]), 2),
+                                            "is_closed": False
+                                        }))
+                                        await websocket.send_text(json.dumps({
+                                            "type": "ticker",
+                                            "symbol": symbol,
+                                            "price": c_bar,
+                                            "time": int(time.time())
+                                        }))
+            except WebSocketDisconnect:
+                running = False
+                break
+            except Exception as e:
+                logger.warning(f"TradingView WS listen error: {e}. Reconnecting in 2s...")
+                await asyncio.sleep(2)
+
     async def listen_binance():
         nonlocal running
         while running:
@@ -377,7 +527,7 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                 logger.warning(f"Binance WS connection error: {e}. Reconnecting in 2s...")
                 await asyncio.sleep(2)
 
-    binance_task = asyncio.create_task(listen_binance())
+    stream_task = asyncio.create_task(listen_tradingview() if symbol == "XAUUSD" else listen_binance())
 
     try:
         while True:
@@ -387,12 +537,12 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                 await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
         running = False
-        binance_task.cancel()
+        stream_task.cancel()
         manager.disconnect(websocket)
         logger.info(f"Client disconnected for {symbol}")
     except Exception as e:
         running = False
-        binance_task.cancel()
+        stream_task.cancel()
         manager.disconnect(websocket)
 
 AUTH_USERS = {
