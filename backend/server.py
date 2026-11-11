@@ -43,7 +43,8 @@ engine = YUZARE_Engine()
 # Pair mapping dengan offset kalibrasi default untuk menyesuaikan dengan broker MT5
 PAIR_MAP = {
     "XAUUSD": {"binance": "PAXGUSDT", "tv_symbol": "OANDA:XAUUSD", "name": "Emas / Dollar A.S. (XAUUSD · OANDA)", "type": "Metals", "digits": 2, "pip": 0.1, "default_offset": 0.0},
-    "USA100": {"binance": "QQQBUSDT", "name": "USA100 (NASDAQ 100)", "type": "Indices", "digits": 2, "pip": 0.1, "default_offset": 0.0},
+    "NAS100USD": {"binance": "QQQBUSDT", "tv_symbol": "OANDA:NAS100USD", "name": "US Nas 100 (NAS100USD · OANDA)", "type": "Indices", "digits": 1, "pip": 0.1, "default_offset": 0.0},
+    "USA100": {"binance": "QQQBUSDT", "tv_symbol": "OANDA:NAS100USD", "name": "US Nas 100 (NAS100USD · OANDA)", "type": "Indices", "digits": 1, "pip": 0.1, "default_offset": 0.0},
     "BTCUSD": {"binance": "BTCUSDT", "name": "Bitcoin / Tether", "type": "Crypto", "digits": 2, "pip": 1.0, "default_offset": 0.0},
     "ETHUSD": {"binance": "ETHUSDT", "name": "Ethereum / Tether", "type": "Crypto", "digits": 2, "pip": 0.1, "default_offset": 0.0},
     "SOLUSD": {"binance": "SOLUSDT", "name": "Solana / Tether", "type": "Crypto", "digits": 2, "pip": 0.01, "default_offset": 0.0},
@@ -199,16 +200,25 @@ def fetch_tradingview_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m",
         return []
 
 def fetch_market_klines(symbol: str, interval: str, limit: int = 2500, offset: float = 0.0) -> List[Dict[str, Any]]:
-    """Mengambil candlestick OANDA:XAUUSD dari TradingView atau fallback Binance Vision"""
-    if symbol == "XAUUSD":
-        tv_candles = fetch_tradingview_klines("OANDA:XAUUSD", interval, limit)
+    """Mengambil candlestick OANDA (XAUUSD & NAS100USD) dari TradingView atau fallback Binance Vision"""
+    pair_cfg = PAIR_MAP.get(symbol, {})
+    tv_symbol = pair_cfg.get("tv_symbol")
+    if tv_symbol:
+        tv_candles = fetch_tradingview_klines(tv_symbol, interval, limit)
         if tv_candles and len(tv_candles) >= 20:
+            digits = pair_cfg.get("digits", 2)
             if offset != 0.0:
                 for c in tv_candles:
-                    c["open"] = round(c["open"] + offset, 2)
-                    c["high"] = round(c["high"] + offset, 2)
-                    c["low"] = round(c["low"] + offset, 2)
-                    c["close"] = round(c["close"] + offset, 2)
+                    c["open"] = round(c["open"] + offset, digits)
+                    c["high"] = round(c["high"] + offset, digits)
+                    c["low"] = round(c["low"] + offset, digits)
+                    c["close"] = round(c["close"] + offset, digits)
+            else:
+                for c in tv_candles:
+                    c["open"] = round(c["open"], digits)
+                    c["high"] = round(c["high"], digits)
+                    c["low"] = round(c["low"], digits)
+                    c["close"] = round(c["close"], digits)
             return tv_candles
     return fetch_binance_klines(symbol, interval, limit, offset)
 
@@ -458,6 +468,8 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         nonlocal running
         tf_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D", "1w": "W"}
         res_itv = tf_map.get(timeframe, "1")
+        tv_sym = PAIR_MAP.get(symbol, {}).get("tv_symbol", "OANDA:XAUUSD")
+        digits = PAIR_MAP.get(symbol, {}).get("digits", 2)
         uri = "wss://data.tradingview.com/socket.io/websocket"
         headers = {"Origin": "https://www.tradingview.com", "User-Agent": "Mozilla/5.0"}
         while running:
@@ -467,7 +479,7 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                     cs = generate_tv_session()
                     await tws.send(construct_tv_msg("set_auth_token", ["unauthorized_user_token"]))
                     await tws.send(construct_tv_msg("chart_create_session", [cs, ""]))
-                    sym_spec = json.dumps({"symbol": "OANDA:XAUUSD", "adjustment": "splits"})
+                    sym_spec = json.dumps({"symbol": tv_sym, "adjustment": "splits"})
                     await tws.send(construct_tv_msg("resolve_symbol", [cs, "sds_sym_1", "=" + sym_spec]))
                     await tws.send(construct_tv_msg("create_series", [cs, "sds_1", "s1", "sds_sym_1", res_itv, 10]))
                     while running:
@@ -482,10 +494,10 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                                     if s_data:
                                         last_bar = s_data[-1]["v"]
                                         t_bar = int(last_bar[0])
-                                        o_bar = round(float(last_bar[1]) + cur_offset, 2)
-                                        h_bar = round(float(last_bar[2]) + cur_offset, 2)
-                                        l_bar = round(float(last_bar[3]) + cur_offset, 2)
-                                        c_bar = round(float(last_bar[4]) + cur_offset, 2)
+                                        o_bar = round(float(last_bar[1]) + cur_offset, digits)
+                                        h_bar = round(float(last_bar[2]) + cur_offset, digits)
+                                        l_bar = round(float(last_bar[3]) + cur_offset, digits)
+                                        c_bar = round(float(last_bar[4]) + cur_offset, digits)
                                         await websocket.send_text(json.dumps({
                                             "type": "kline",
                                             "symbol": symbol,
@@ -567,7 +579,8 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                 logger.warning(f"Binance WS connection error: {e}. Reconnecting in 2s...")
                 await asyncio.sleep(2)
 
-    stream_task = asyncio.create_task(listen_tradingview() if symbol == "XAUUSD" else listen_binance())
+    has_tv = bool(PAIR_MAP.get(symbol, {}).get("tv_symbol"))
+    stream_task = asyncio.create_task(listen_tradingview() if has_tv else listen_binance())
 
     try:
         while True:
