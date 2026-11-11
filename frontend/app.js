@@ -311,6 +311,7 @@ function computeClientSideIndicators(candles) {
   if (n < 20) return { candles, signals: [], pending_zones: [], stats: { win_rate: 0, total_signals: 0 } };
 
   const closes = candles.map(c => c.close);
+  const opens = candles.map(c => c.open);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
 
@@ -325,6 +326,49 @@ function computeClientSideIndicators(candles) {
   for (let i = 14; i < n; i++) {
     a = (a * 13 + trs[i]) / 14;
     atr.push(a);
+  }
+
+  // EMA 9 & EMA 21
+  const ema9 = [];
+  const ema21 = [];
+  const k9 = 2 / (9 + 1);
+  const k21 = 2 / (21 + 1);
+  let e9 = closes[0];
+  let e21 = closes[0];
+  for (let i = 0; i < n; i++) {
+    e9 = i === 0 ? closes[0] : (closes[i] * k9 + e9 * (1 - k9));
+    e21 = i === 0 ? closes[0] : (closes[i] * k21 + e21 * (1 - k21));
+    ema9.push(e9);
+    ema21.push(e21);
+  }
+
+  // RSI 14
+  const rsi = [];
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < n; i++) {
+    if (i === 0) {
+      rsi.push(50);
+      continue;
+    }
+    const diff = closes[i] - closes[i - 1];
+    const gain = Math.max(0, diff);
+    const loss = Math.max(0, -diff);
+    if (i <= 14) {
+      avgGain += gain / 14;
+      avgLoss += loss / 14;
+      if (i < 14) {
+        rsi.push(50);
+      } else {
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        rsi.push(100 - (100 / (1 + rs)));
+      }
+    } else {
+      avgGain = (avgGain * 13 + gain) / 14;
+      avgLoss = (avgLoss * 13 + loss) / 14;
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      rsi.push(100 - (100 / (1 + rs)));
+    }
   }
 
   // Trend & QRR Bands
@@ -417,16 +461,45 @@ function computeClientSideIndicators(candles) {
   const signals = [];
   const buy_trades = [];
   const sell_trades = [];
-  let lastBuy = -999, lastSell = -999;
+
+  const tf = state.timeframe || '1m';
+  const minGapAny = tf === '1m' ? 8 : (tf === '5m' ? 5 : 4);
+  const minGapSame = tf === '1m' ? 12 : (tf === '5m' ? 8 : 6);
+
+  let lastBuyBar = -999;
+  let lastSellBar = -999;
+  let lastSignalBar = -999;
 
   for (let i = 15; i < n; i++) {
-    const isUp = trend[i] === 1 && (trend[i - 1] === -1 || closes[i] > closes[i - 1]);
-    const isDn = trend[i] === -1 && (trend[i - 1] === 1 || closes[i] < closes[i - 1]);
+    const curAtr = atr[i] > 0 ? atr[i] : 1.0;
+    const cRange = highs[i] - lows[i] + 0.0001;
+    const bullBody = closes[i] - opens[i];
+    const bearBody = opens[i] - closes[i];
+    const isSolidBull = bullBody > 0 && bullBody >= 0.28 * cRange;
+    const isSolidBear = bearBody > 0 && bearBody >= 0.28 * cRange;
+
+    // BUY Confluence: Major Trend Flip OR EMA Cross Up OR Momentum Impulse
+    const isTrendFlipUp = trend[i] === 1 && trend[i - 1] === -1;
+    const isEmaCrossUp = ema9[i] >= ema21[i] && ema9[i - 1] < ema21[i - 1];
+    const isImpulseUp = trend[i] === 1 && ema9[i] > ema21[i] && closes[i] > closes[i - 1] + 0.35 * curAtr;
+    const buyImpulse = isTrendFlipUp || isEmaCrossUp || isImpulseUp;
+    const buyCond = buyImpulse && isSolidBull && (rsi[i] >= 40 && rsi[i] <= 70);
+
+    // SELL Confluence: Major Trend Flip OR EMA Cross Down OR Momentum Impulse
+    const isTrendFlipDn = trend[i] === -1 && trend[i - 1] === 1;
+    const isEmaCrossDn = ema9[i] <= ema21[i] && ema9[i - 1] > ema21[i - 1];
+    const isImpulseDn = trend[i] === -1 && ema9[i] < ema21[i] && closes[i] < closes[i - 1] - 0.35 * curAtr;
+    const sellImpulse = isTrendFlipDn || isEmaCrossDn || isImpulseDn;
+    const sellCond = sellImpulse && isSolidBear && (rsi[i] >= 30 && rsi[i] <= 60);
+
+    const canBuy = buyCond && (i - lastSignalBar >= minGapAny) && (i - lastBuyBar >= minGapSame);
+    const canSell = sellCond && (i - lastSignalBar >= minGapAny) && (i - lastSellBar >= minGapSame);
 
     const tpList = (state.tp_targets && state.tp_targets.length > 0) ? state.tp_targets : [30, 50, 70, 100];
 
-    if (isUp && closes[i] > candles[i].open && i - lastBuy >= 5) {
-      lastBuy = i;
+    if (canBuy) {
+      lastBuyBar = i;
+      lastSignalBar = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
       const slDist = state.sl_pips * pipUnit;
@@ -485,10 +558,9 @@ function computeClientSideIndicators(candles) {
 
       buy_trades.push(trade);
       signals.push({ time: candles[i].time, type: 'BUY', position: 'belowBar', color: '#00C853', shape: 'arrowUp', text: 'buy', price: candles[i].low, details: trade });
-    }
-
-    if (isDn && closes[i] < candles[i].open && i - lastSell >= 5) {
-      lastSell = i;
+    } else if (canSell) {
+      lastSellBar = i;
+      lastSignalBar = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
       const slDist = state.sl_pips * pipUnit;
@@ -698,8 +770,8 @@ function renderSignalBadges() {
     const pill = document.createElement('div');
     pill.className = `signal-pill ${isBuy ? 'buy' : 'sell'}`;
     pill.textContent = isBuy ? 'buy' : 'sell';
-    pill.style.left = `${x}px`;
-    pill.style.top = `${y}px`;
+    pill.style.left = `${Math.round(x)}px`;
+    pill.style.top = `${Math.round(y)}px`;
 
     overlay.appendChild(pill);
   });

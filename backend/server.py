@@ -148,7 +148,8 @@ def get_analysis(
         tp1_pips=tp1_pips, 
         tp2_pips=tp2_pips, 
         tp3_pips=tp3_pips, 
-        tp4_pips=tp4_pips
+        tp4_pips=tp4_pips,
+        timeframe=timeframe
     )
     result["symbol"] = symbol
     result["timeframe"] = timeframe
