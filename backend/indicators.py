@@ -247,55 +247,36 @@ class YUZARE_Engine:
         active_buy_trades = []
         active_sell_trades = []
 
-        timeframe = kwargs.get("timeframe", "1m")
-        # Timeframe-aware cooldowns to prevent signal spamming and clustering
-        if timeframe == "1m":
-            min_gap_any = 8     # Minimum 8 bars between ANY opposite signal
-            min_gap_same = 12   # Minimum 12 bars before another signal in same direction
-        elif timeframe == "5m":
-            min_gap_any = 5
-            min_gap_same = 8
-        else:
-            min_gap_any = 4
-            min_gap_same = 6
-
         last_buy_bar = -999
         last_sell_bar = -999
-        last_signal_bar = -999
+        cooldown = 4 # allow dual flow while keeping chart crisp
 
         for i in range(15, n):
             c_curr = candles[i]
             cur_atr = atr[i] if atr[i] > 0 else 1.0
 
-            # 1. Solid Candle Body Filter (Eliminates dojis & noise bars)
-            c_range = highs[i] - lows[i] + 0.0001
-            bull_body = closes[i] - opens[i]
-            bear_body = opens[i] - closes[i]
-            is_solid_bull = (bull_body > 0) and (bull_body >= 0.28 * c_range)
-            is_solid_bear = (bear_body > 0) and (bear_body >= 0.28 * c_range)
-
-            # 2. Trend & Momentum Impulse Filter (From YUZARE_Indicator.pine)
-            # BUY Confluence: Major Trend Flip OR EMA Cross Up OR Momentum Impulse
+            # Trend reversal trigger or trend pullback continuation
+            # BUY:
+            # 1. Trend flipped from -1 to 1 (Major reversal) OR
+            # 2. In uptrend (trend==1), price dipped to EMA/lower wick and candle closed strong green
             is_trend_flip_up = (trend[i] == 1 and trend[i - 1] == -1)
-            is_ema_cross_up = (ema_fast[i] >= ema_slow[i] and ema_fast[i - 1] < ema_slow[i - 1])
-            is_impulse_up = (trend[i] == 1 and ema_fast[i] > ema_slow[i] and closes[i] > closes[i - 1] + 0.35 * cur_atr)
-            buy_impulse = is_trend_flip_up or is_ema_cross_up or is_impulse_up
-            buy_cond = buy_impulse and is_solid_bull and (rsi[i] >= 40 and rsi[i] <= 70)
+            is_pullback_buy = (trend[i] == 1 and closes[i] > opens[i] and lows[i] <= up_band[i] + 0.3 * cur_atr and closes[i] > closes[i - 1])
+            is_breakout_buy = (trend[i] == 1 and closes[i] > max(closes[i - 1], closes[i - 2]) and (closes[i] - opens[i]) > 0.3 * cur_atr)
 
-            # SELL Confluence: Major Trend Flip OR EMA Cross Down OR Momentum Impulse
+            buy_cond = (is_trend_flip_up or is_pullback_buy or is_breakout_buy) and (closes[i] > opens[i]) and (rsi[i] >= 42)
+
+            # SELL:
+            # 1. Trend flipped from 1 to -1 (Major reversal) OR
+            # 2. In downtrend (trend==-1), price rallied to EMA/upper wick and candle closed strong red
             is_trend_flip_dn = (trend[i] == -1 and trend[i - 1] == 1)
-            is_ema_cross_dn = (ema_fast[i] <= ema_slow[i] and ema_fast[i - 1] > ema_slow[i - 1])
-            is_impulse_dn = (trend[i] == -1 and ema_fast[i] < ema_slow[i] and closes[i] < closes[i - 1] - 0.35 * cur_atr)
-            sell_impulse = is_trend_flip_dn or is_ema_cross_dn or is_impulse_dn
-            sell_cond = sell_impulse and is_solid_bear and (rsi[i] >= 30 and rsi[i] <= 60)
+            is_pullback_sell = (trend[i] == -1 and closes[i] < opens[i] and highs[i] >= dn_band[i] - 0.3 * cur_atr and closes[i] < closes[i - 1])
+            is_breakout_sell = (trend[i] == -1 and closes[i] < min(closes[i - 1], closes[i - 2]) and (opens[i] - closes[i]) > 0.3 * cur_atr)
 
-            can_buy = buy_cond and (i - last_signal_bar >= min_gap_any) and (i - last_buy_bar >= min_gap_same)
-            can_sell = sell_cond and (i - last_signal_bar >= min_gap_any) and (i - last_sell_bar >= min_gap_same)
+            sell_cond = (is_trend_flip_dn or is_pullback_sell or is_breakout_sell) and (closes[i] < opens[i]) and (rsi[i] <= 58)
 
             # BUY Trigger
-            if can_buy:
+            if buy_cond and (i - last_buy_bar >= cooldown):
                 last_buy_bar = i
-                last_signal_bar = i
                 entry = c_curr["close"]
                 sl = entry - (sl_pips * pip_unit)
                 tps = []
@@ -339,10 +320,9 @@ class YUZARE_Engine:
                     "details": trade
                 })
 
-            # SELL Trigger
-            elif can_sell:
+            # SELL Trigger (DUAL SIGNAL: Independent from BUY)
+            if sell_cond and (i - last_sell_bar >= cooldown):
                 last_sell_bar = i
-                last_signal_bar = i
                 entry = c_curr["close"]
                 sl = entry + (sl_pips * pip_unit)
                 tps = []

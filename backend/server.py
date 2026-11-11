@@ -148,8 +148,7 @@ def get_analysis(
         tp1_pips=tp1_pips, 
         tp2_pips=tp2_pips, 
         tp3_pips=tp3_pips, 
-        tp4_pips=tp4_pips,
-        timeframe=timeframe
+        tp4_pips=tp4_pips
     )
     result["symbol"] = symbol
     result["timeframe"] = timeframe
@@ -157,6 +156,62 @@ def get_analysis(
     result["offset"] = offset
     
     return result
+
+@app.get("/api/stats/all")
+def get_all_stats(
+    symbol: str = "XAUUSD",
+    sl_pips: float = 30.0,
+    tp_targets: Optional[str] = None,
+    tp1_pips: float = 30.0,
+    tp2_pips: float = 50.0,
+    tp3_pips: float = 70.0,
+    tp4_pips: float = 100.0,
+):
+    """
+    Menghitung statistik performa kumulatif dari seluruh timeframe (1M sampai 1W).
+    """
+    symbol = symbol.upper()
+    if symbol not in PAIR_MAP:
+        symbol = "XAUUSD"
+    offset = broker_offsets.get(symbol, 0.0)
+
+    if tp_targets:
+        try:
+            tp_list = [float(x.strip()) for x in tp_targets.split(",") if x.strip()]
+        except Exception:
+            tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
+    else:
+        tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
+
+    by_tf = {}
+    tot_signals = 0
+    tot_tp = 0
+    tot_sl = 0
+
+    for tf in TIMEFRAMES:
+        candles = fetch_binance_klines(symbol, tf, limit=250, offset=offset)
+        if candles:
+            res = engine.analyze(candles, sl_pips=sl_pips, tp_list=tp_list)
+            st = res.get("stats", {})
+            by_tf[tf] = st
+            tot_signals += st.get("total_signals", 0)
+            tot_tp += st.get("tp_hits", 0)
+            tot_sl += st.get("sl_hits", 0)
+
+    decided = tot_tp + tot_sl
+    win_rate = round((tot_tp / decided * 100.0), 1) if decided > 0 else 0.0
+
+    return {
+        "symbol": symbol,
+        "combined": {
+            "total_signals": tot_signals,
+            "tp_hits": tot_tp,
+            "sl_hits": tot_sl,
+            "completed_trades": decided,
+            "win_rate": win_rate
+        },
+        "by_timeframe": by_tf
+    }
 
 # Active WebSocket connections for live client broadcast
 class ConnectionManager:

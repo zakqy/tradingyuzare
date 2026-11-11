@@ -16,6 +16,8 @@ const DEFAULT_TF_SETTINGS = {
   '1w': { sl_pips: 250, tp_targets: [250, 400, 600, 800] },
 };
 
+const ALL_TF_LIST = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'];
+
 function getStoredTFSettings() {
   const settings = JSON.parse(JSON.stringify(DEFAULT_TF_SETTINGS));
   try {
@@ -53,6 +55,14 @@ const state = {
   symbol: 'XAUUSD',
   timeframe: initialTF,
   tf_settings: initialTFSettings,
+  all_tf_stats: {},
+  combined_stats: {
+    win_rate: 0,
+    total_signals: 0,
+    tp_hits: 0,
+    sl_hits: 0,
+    completed_trades: 0,
+  },
   offset: parseFloat(localStorage.getItem('offset_XAUUSD') || '8.5'),
   sl_pips: activeTFConf.sl_pips || 30,
   tp_targets: [...activeTFConf.tp_targets],
@@ -306,12 +316,17 @@ function getPipUnit(symbol, price) {
 }
 
 // Client-Side Calculation Engine (For Standalone GitHub Pages Mode)
-function computeClientSideIndicators(candles) {
+function computeClientSideIndicators(candles, tf = state.timeframe) {
   const n = candles.length;
-  if (n < 20) return { candles, signals: [], pending_zones: [], stats: { win_rate: 0, total_signals: 0 } };
+  if (n < 20) return { candles, signals: [], pending_zones: [], stats: { win_rate: 0, total_signals: 0, tp_hits: 0, sl_hits: 0 } };
+
+  const conf = (state.tf_settings && state.tf_settings[tf]) 
+    ? state.tf_settings[tf] 
+    : { sl_pips: state.sl_pips, tp_targets: state.tp_targets };
+  const slPips = conf.sl_pips || state.sl_pips || 30;
+  const tpList = (conf.tp_targets && conf.tp_targets.length > 0) ? conf.tp_targets : [30, 50];
 
   const closes = candles.map(c => c.close);
-  const opens = candles.map(c => c.open);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
 
@@ -326,49 +341,6 @@ function computeClientSideIndicators(candles) {
   for (let i = 14; i < n; i++) {
     a = (a * 13 + trs[i]) / 14;
     atr.push(a);
-  }
-
-  // EMA 9 & EMA 21
-  const ema9 = [];
-  const ema21 = [];
-  const k9 = 2 / (9 + 1);
-  const k21 = 2 / (21 + 1);
-  let e9 = closes[0];
-  let e21 = closes[0];
-  for (let i = 0; i < n; i++) {
-    e9 = i === 0 ? closes[0] : (closes[i] * k9 + e9 * (1 - k9));
-    e21 = i === 0 ? closes[0] : (closes[i] * k21 + e21 * (1 - k21));
-    ema9.push(e9);
-    ema21.push(e21);
-  }
-
-  // RSI 14
-  const rsi = [];
-  let avgGain = 0;
-  let avgLoss = 0;
-  for (let i = 0; i < n; i++) {
-    if (i === 0) {
-      rsi.push(50);
-      continue;
-    }
-    const diff = closes[i] - closes[i - 1];
-    const gain = Math.max(0, diff);
-    const loss = Math.max(0, -diff);
-    if (i <= 14) {
-      avgGain += gain / 14;
-      avgLoss += loss / 14;
-      if (i < 14) {
-        rsi.push(50);
-      } else {
-        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-        rsi.push(100 - (100 / (1 + rs)));
-      }
-    } else {
-      avgGain = (avgGain * 13 + gain) / 14;
-      avgLoss = (avgLoss * 13 + loss) / 14;
-      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-      rsi.push(100 - (100 / (1 + rs)));
-    }
   }
 
   // Trend & QRR Bands
@@ -461,48 +433,17 @@ function computeClientSideIndicators(candles) {
   const signals = [];
   const buy_trades = [];
   const sell_trades = [];
-
-  const tf = state.timeframe || '1m';
-  const minGapAny = tf === '1m' ? 8 : (tf === '5m' ? 5 : 4);
-  const minGapSame = tf === '1m' ? 12 : (tf === '5m' ? 8 : 6);
-
-  let lastBuyBar = -999;
-  let lastSellBar = -999;
-  let lastSignalBar = -999;
+  let lastBuy = -999, lastSell = -999;
 
   for (let i = 15; i < n; i++) {
-    const curAtr = atr[i] > 0 ? atr[i] : 1.0;
-    const cRange = highs[i] - lows[i] + 0.0001;
-    const bullBody = closes[i] - opens[i];
-    const bearBody = opens[i] - closes[i];
-    const isSolidBull = bullBody > 0 && bullBody >= 0.28 * cRange;
-    const isSolidBear = bearBody > 0 && bearBody >= 0.28 * cRange;
+    const isUp = trend[i] === 1 && (trend[i - 1] === -1 || closes[i] > closes[i - 1]);
+    const isDn = trend[i] === -1 && (trend[i - 1] === 1 || closes[i] < closes[i - 1]);
 
-    // BUY Confluence: Major Trend Flip OR EMA Cross Up OR Momentum Impulse
-    const isTrendFlipUp = trend[i] === 1 && trend[i - 1] === -1;
-    const isEmaCrossUp = ema9[i] >= ema21[i] && ema9[i - 1] < ema21[i - 1];
-    const isImpulseUp = trend[i] === 1 && ema9[i] > ema21[i] && closes[i] > closes[i - 1] + 0.35 * curAtr;
-    const buyImpulse = isTrendFlipUp || isEmaCrossUp || isImpulseUp;
-    const buyCond = buyImpulse && isSolidBull && (rsi[i] >= 40 && rsi[i] <= 70);
-
-    // SELL Confluence: Major Trend Flip OR EMA Cross Down OR Momentum Impulse
-    const isTrendFlipDn = trend[i] === -1 && trend[i - 1] === 1;
-    const isEmaCrossDn = ema9[i] <= ema21[i] && ema9[i - 1] > ema21[i - 1];
-    const isImpulseDn = trend[i] === -1 && ema9[i] < ema21[i] && closes[i] < closes[i - 1] - 0.35 * curAtr;
-    const sellImpulse = isTrendFlipDn || isEmaCrossDn || isImpulseDn;
-    const sellCond = sellImpulse && isSolidBear && (rsi[i] >= 30 && rsi[i] <= 60);
-
-    const canBuy = buyCond && (i - lastSignalBar >= minGapAny) && (i - lastBuyBar >= minGapSame);
-    const canSell = sellCond && (i - lastSignalBar >= minGapAny) && (i - lastSellBar >= minGapSame);
-
-    const tpList = (state.tp_targets && state.tp_targets.length > 0) ? state.tp_targets : [30, 50, 70, 100];
-
-    if (canBuy) {
-      lastBuyBar = i;
-      lastSignalBar = i;
+    if (isUp && closes[i] > candles[i].open && i - lastBuy >= 5) {
+      lastBuy = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
-      const slDist = state.sl_pips * pipUnit;
+      const slDist = slPips * pipUnit;
 
       const tps = tpList.map((pips, idx) => ({
         level: idx + 1,
@@ -558,12 +499,13 @@ function computeClientSideIndicators(candles) {
 
       buy_trades.push(trade);
       signals.push({ time: candles[i].time, type: 'BUY', position: 'belowBar', color: '#00C853', shape: 'arrowUp', text: 'buy', price: candles[i].low, details: trade });
-    } else if (canSell) {
-      lastSellBar = i;
-      lastSignalBar = i;
+    }
+
+    if (isDn && closes[i] < candles[i].open && i - lastSell >= 5) {
+      lastSell = i;
       const entry = closes[i];
       const pipUnit = getPipUnit(state.symbol, entry);
-      const slDist = state.sl_pips * pipUnit;
+      const slDist = slPips * pipUnit;
 
       const tps = tpList.map((pips, idx) => ({
         level: idx + 1,
@@ -702,6 +644,12 @@ async function loadMarketData() {
     updateSidebar(data);
     updateOHLC(state.candles[state.candles.length - 1]);
 
+    // Auto-fetch multi-timeframe stats in background if not fully loaded yet
+    const hasAllTFStats = ALL_TF_LIST.every(tf => state.all_tf_stats[tf] && state.all_tf_stats[tf].total_signals > 0);
+    if (!hasAllTFStats) {
+      loadAllTimeframeStats();
+    }
+
     startWebSocket();
     startTickerHeartbeat();
     startCountdown();
@@ -710,6 +658,77 @@ async function loadMarketData() {
   } catch (err) {
     console.error('Error loading data:', err);
     showToast('Gagal memuat feed chart', '❌');
+  }
+}
+
+// Multi-Timeframe Background Loader (Aggregates 1M - 1W Stats)
+let isFetchingAllStats = false;
+async function loadAllTimeframeStats(force = false) {
+  if (isFetchingAllStats && !force) return;
+  isFetchingAllStats = true;
+
+  try {
+    const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+    if (isLocal) {
+      try {
+        const tpStr = (state.tp_targets || []).join(',');
+        const resp = await fetch(`/api/stats/all?symbol=${state.symbol}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}`);
+        if (resp.ok) {
+          const res = await resp.json();
+          if (res.by_timeframe) {
+            for (const tf in res.by_timeframe) {
+              state.all_tf_stats[tf] = res.by_timeframe[tf];
+            }
+          }
+          if (res.combined) {
+            state.combined_stats = res.combined;
+          }
+          renderStatsDisplay();
+          isFetchingAllStats = false;
+          return;
+        }
+      } catch (e) {
+        console.warn('Local /api/stats/all fallback to Binance client fetch');
+      }
+    }
+
+    // Direct Binance Vision API for each timeframe (parallel fetch for maximum speed)
+    const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
+    const offset = state.symbol === 'XAUUSD' ? state.offset : 0.0;
+
+    await Promise.all(
+      ALL_TF_LIST.map(async (tf) => {
+        if (!force && state.all_tf_stats[tf] && state.all_tf_stats[tf].total_signals > 0) {
+          return;
+        }
+        try {
+          const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${tf}&limit=250`;
+          const resp = await fetch(klineUrl);
+          if (!resp.ok) return;
+          const raw = await resp.json();
+          const rawCandles = raw.map(x => ({
+            time: Math.floor(x[0] / 1000),
+            open: Math.round((parseFloat(x[1]) + offset) * 100) / 100,
+            high: Math.round((parseFloat(x[2]) + offset) * 100) / 100,
+            low: Math.round((parseFloat(x[3]) + offset) * 100) / 100,
+            close: Math.round((parseFloat(x[4]) + offset) * 100) / 100,
+            volume: parseFloat(x[5]),
+          }));
+          const analyzed = computeClientSideIndicators(rawCandles, tf);
+          if (analyzed && analyzed.stats) {
+            state.all_tf_stats[tf] = analyzed.stats;
+          }
+        } catch (err) {
+          console.warn(`Multi-TF fetch error for ${tf}:`, err);
+        }
+      })
+    );
+
+    computeCombinedStats();
+  } catch (err) {
+    console.error('Error in loadAllTimeframeStats:', err);
+  } finally {
+    isFetchingAllStats = false;
   }
 }
 
@@ -770,8 +789,8 @@ function renderSignalBadges() {
     const pill = document.createElement('div');
     pill.className = `signal-pill ${isBuy ? 'buy' : 'sell'}`;
     pill.textContent = isBuy ? 'buy' : 'sell';
-    pill.style.left = `${Math.round(x)}px`;
-    pill.style.top = `${Math.round(y)}px`;
+    pill.style.left = `${x}px`;
+    pill.style.top = `${y}px`;
 
     overlay.appendChild(pill);
   });
@@ -1064,21 +1083,55 @@ function updateSidebar(data) {
 
   if (data.stats) {
     state.stats = { ...data.stats };
-    renderStatsDisplay();
+    state.all_tf_stats[state.timeframe] = { ...data.stats };
+    computeCombinedStats();
   }
 }
 
+function computeCombinedStats() {
+  let totalSignals = 0;
+  let tpHits = 0;
+  let slHits = 0;
+  let completed = 0;
+
+  for (const tf of ALL_TF_LIST) {
+    const st = state.all_tf_stats[tf];
+    if (st) {
+      totalSignals += (st.total_signals || 0);
+      tpHits += (st.tp_hits || 0);
+      slHits += (st.sl_hits || 0);
+      completed += (st.completed_trades || ((st.tp_hits || 0) + (st.sl_hits || 0)));
+    }
+  }
+
+  const decided = tpHits + slHits;
+  const winRate = decided > 0 ? Math.round((tpHits / decided) * 1000) / 10 : 0;
+
+  state.combined_stats = {
+    total_signals: totalSignals,
+    tp_hits: tpHits,
+    sl_hits: slHits,
+    completed_trades: decided,
+    win_rate: winRate,
+  };
+
+  renderStatsDisplay();
+}
+
 function renderStatsDisplay() {
-  if (!state.stats) return;
+  const statsToRender = (state.combined_stats && state.combined_stats.total_signals > 0)
+    ? state.combined_stats
+    : (state.stats || { win_rate: 0, total_signals: 0, tp_hits: 0, sl_hits: 0 });
+
   const wrEl = document.getElementById('stat-winrate');
   const sigEl = document.getElementById('stat-signals');
   const tpHitEl = document.getElementById('stat-tphits');
   const slHitEl = document.getElementById('stat-slhits');
 
-  if (wrEl) wrEl.textContent = `${state.stats.win_rate}%`;
-  if (sigEl) sigEl.textContent = state.stats.total_signals;
-  if (tpHitEl) tpHitEl.textContent = state.stats.tp_hits;
-  if (slHitEl) slHitEl.textContent = state.stats.sl_hits;
+  if (wrEl) wrEl.textContent = `${statsToRender.win_rate}%`;
+  if (sigEl) sigEl.textContent = statsToRender.total_signals;
+  if (tpHitEl) tpHitEl.textContent = statsToRender.tp_hits;
+  if (slHitEl) slHitEl.textContent = statsToRender.sl_hits;
 }
 
 // Live Tick Update
@@ -1128,12 +1181,20 @@ function updateSidebarPrice(currentPrice) {
         b[`tp${t.level}_hit`] = true;
         needsTPSLRedraw = true;
 
-        if (t.level === 1 && state.stats && !b._counted_tp) {
+        if (t.level === 1 && !b._counted_tp) {
           b._counted_tp = true;
-          state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
-          const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
-          state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
-          renderStatsDisplay();
+          if (state.stats) {
+            state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
+            const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+            state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+          }
+          if (state.all_tf_stats[state.timeframe]) {
+            state.all_tf_stats[state.timeframe].tp_hits = (state.all_tf_stats[state.timeframe].tp_hits || 0) + 1;
+            const curTFHits = state.all_tf_stats[state.timeframe].tp_hits;
+            const curTFSl = state.all_tf_stats[state.timeframe].sl_hits || 0;
+            state.all_tf_stats[state.timeframe].win_rate = (curTFHits + curTFSl > 0) ? Math.round((curTFHits / (curTFHits + curTFSl)) * 1000) / 10 : 0;
+          }
+          computeCombinedStats();
         }
 
         if (idx === tps.length - 1) {
@@ -1148,12 +1209,20 @@ function updateSidebarPrice(currentPrice) {
       b.status = 'SL HIT';
       b.is_closed = true;
       needsTPSLRedraw = true;
-      if (state.stats && !b._counted_sl && !b._counted_tp) {
+      if (!b._counted_sl && !b._counted_tp) {
         b._counted_sl = true;
-        state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
-        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
-        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
-        renderStatsDisplay();
+        if (state.stats) {
+          state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
+          const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+          state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+        }
+        if (state.all_tf_stats[state.timeframe]) {
+          state.all_tf_stats[state.timeframe].sl_hits = (state.all_tf_stats[state.timeframe].sl_hits || 0) + 1;
+          const curTFHits = state.all_tf_stats[state.timeframe].tp_hits || 0;
+          const curTFSl = state.all_tf_stats[state.timeframe].sl_hits;
+          state.all_tf_stats[state.timeframe].win_rate = (curTFHits + curTFSl > 0) ? Math.round((curTFHits / (curTFHits + curTFSl)) * 1000) / 10 : 0;
+        }
+        computeCombinedStats();
       }
     }
   }
@@ -1167,12 +1236,20 @@ function updateSidebarPrice(currentPrice) {
         s[`tp${t.level}_hit`] = true;
         needsTPSLRedraw = true;
 
-        if (t.level === 1 && state.stats && !s._counted_tp) {
+        if (t.level === 1 && !s._counted_tp) {
           s._counted_tp = true;
-          state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
-          const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
-          state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
-          renderStatsDisplay();
+          if (state.stats) {
+            state.stats.tp_hits = (state.stats.tp_hits || 0) + 1;
+            const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+            state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+          }
+          if (state.all_tf_stats[state.timeframe]) {
+            state.all_tf_stats[state.timeframe].tp_hits = (state.all_tf_stats[state.timeframe].tp_hits || 0) + 1;
+            const curTFHits = state.all_tf_stats[state.timeframe].tp_hits;
+            const curTFSl = state.all_tf_stats[state.timeframe].sl_hits || 0;
+            state.all_tf_stats[state.timeframe].win_rate = (curTFHits + curTFSl > 0) ? Math.round((curTFHits / (curTFHits + curTFSl)) * 1000) / 10 : 0;
+          }
+          computeCombinedStats();
         }
 
         if (idx === tps.length - 1) {
@@ -1187,12 +1264,20 @@ function updateSidebarPrice(currentPrice) {
       s.status = 'SL HIT';
       s.is_closed = true;
       needsTPSLRedraw = true;
-      if (state.stats && !s._counted_sl && !s._counted_tp) {
+      if (!s._counted_sl && !s._counted_tp) {
         s._counted_sl = true;
-        state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
-        const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
-        state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
-        renderStatsDisplay();
+        if (state.stats) {
+          state.stats.sl_hits = (state.stats.sl_hits || 0) + 1;
+          const total = (state.stats.tp_hits || 0) + (state.stats.sl_hits || 0);
+          state.stats.win_rate = total > 0 ? Math.round((state.stats.tp_hits / total) * 1000) / 10 : 0;
+        }
+        if (state.all_tf_stats[state.timeframe]) {
+          state.all_tf_stats[state.timeframe].sl_hits = (state.all_tf_stats[state.timeframe].sl_hits || 0) + 1;
+          const curTFHits = state.all_tf_stats[state.timeframe].tp_hits || 0;
+          const curTFSl = state.all_tf_stats[state.timeframe].sl_hits;
+          state.all_tf_stats[state.timeframe].win_rate = (curTFHits + curTFSl > 0) ? Math.round((curTFHits / (curTFHits + curTFSl)) * 1000) / 10 : 0;
+        }
+        computeCombinedStats();
       }
     }
   }
@@ -1691,7 +1776,9 @@ function setupEventListeners() {
     applyTimeframeSettings(state.timeframe);
 
     modalSettings.classList.remove('active');
+    state.all_tf_stats = {};
     loadMarketData();
+    loadAllTimeframeStats(true);
     showToast(`✓ Pengaturan disimpan! (${state.timeframe.toUpperCase()}: ${state.tp_targets.length} Level TP)`, '⚙️');
   });
 
