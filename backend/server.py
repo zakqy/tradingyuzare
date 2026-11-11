@@ -53,7 +53,7 @@ PAIR_MAP = {
 TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
 
 # Global configurable offsets
-broker_offsets: Dict[str, float] = {k: v.get("default_offset", 0.0) for k, v in PAIR_MAP.items()}
+broker_offsets: Dict[str, float] = {k: float(v.get("default_offset", 0.0)) for k, v in PAIR_MAP.items()}
 
 # Default candle limits per timeframe untuk menampilkan riwayat berhari-hari sebelumnya
 DEFAULT_TF_LIMITS = {
