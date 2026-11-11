@@ -47,8 +47,8 @@ def calculate_ema(values: List[float], period: int) -> List[float]:
         ema.append(curr)
     return ema
 
-def calculate_rsi(closes: List[float], period: int = 8) -> List[float]:
-    """Menghitung Relative Strength Index (RSI Periode 8)"""
+def calculate_rsi(closes: List[float], period: int = 14) -> List[float]:
+    """Menghitung Relative Strength Index (RSI)"""
     if len(closes) < 2:
         return [50.0] * len(closes)
     
@@ -75,88 +75,6 @@ def calculate_rsi(closes: List[float], period: int = 8) -> List[float]:
             rs = avg_gain / avg_loss
             rsi.append(100.0 - (100.0 / (1.0 + rs)))
     return rsi
-
-def calculate_sma(values: List[float], period: int = 9) -> List[float]:
-    """Menghitung Simple Moving Average (SMA Periode 9)"""
-    n = len(values)
-    sma = []
-    for i in range(n):
-        start_idx = max(0, i - period + 1)
-        window = values[start_idx : i + 1]
-        sma.append(sum(window) / len(window))
-    return sma
-
-def calculate_bollinger_bands(closes: List[float], period: int = 20, dev: float = 2.0):
-    """Menghitung Bollinger Bands (Periode 20, Selisih/Deviasi 2.0)"""
-    n = len(closes)
-    bb_mid = []
-    bb_upper = []
-    bb_lower = []
-    for i in range(n):
-        start_idx = max(0, i - period + 1)
-        win = closes[start_idx : i + 1]
-        m = sum(win) / len(win)
-        variance = sum((x - m) ** 2 for x in win) / len(win)
-        std = math.sqrt(variance)
-        bb_mid.append(m)
-        bb_upper.append(m + dev * std)
-        bb_lower.append(m - dev * std)
-    return bb_mid, bb_upper, bb_lower
-
-def calculate_psar(highs: List[float], lows: List[float], step: float = 0.02, max_step: float = 0.20):
-    """Menghitung Parabolic SAR (Langkah 0.02, Maksimum 0.20)"""
-    n = len(highs)
-    sar = [0.0] * n
-    trend = [1] * n
-    if n < 2:
-        return sar, trend
-
-    is_up = highs[1] >= highs[0]
-    trend[0] = 1 if is_up else -1
-    trend[1] = trend[0]
-    ep = highs[0] if is_up else lows[0]
-    af = step
-    sar[0] = lows[0] if is_up else highs[0]
-    sar[1] = sar[0]
-
-    for i in range(2, n):
-        prev_sar = sar[i - 1]
-        if trend[i - 1] == 1:
-            cur_sar = prev_sar + af * (ep - prev_sar)
-            cur_sar = min(cur_sar, lows[i - 1], lows[i - 2])
-            if lows[i] < cur_sar:
-                trend[i] = -1
-                sar[i] = ep
-                ep = lows[i]
-                af = step
-            else:
-                trend[i] = 1
-                sar[i] = cur_sar
-                if highs[i] > ep:
-                    ep = highs[i]
-                    af = min(af + step, max_step)
-        else:
-            cur_sar = prev_sar + af * (ep - prev_sar)
-            cur_sar = max(cur_sar, highs[i - 1], highs[i - 2])
-            if highs[i] > cur_sar:
-                trend[i] = 1
-                sar[i] = ep
-                ep = highs[i]
-                af = step
-            else:
-                trend[i] = -1
-                sar[i] = cur_sar
-                if lows[i] < ep:
-                    ep = lows[i]
-                    af = min(af + step, max_step)
-    return sar, trend
-
-def calculate_macd(closes: List[float], fast: int = 12, slow: int = 26):
-    """Menghitung MACD Line (EMA Cepat 12, EMA Lambat 26, Signal SMA 1)"""
-    ema_fast = calculate_ema(closes, fast)
-    ema_slow = calculate_ema(closes, slow)
-    macd_line = [f - s for f, s in zip(ema_fast, ema_slow)]
-    return macd_line
 
 class YUZARE_Engine:
     def __init__(self, atr_period: int = 12, qrr_mult: float = 1.4, swing_lookback: int = 6):
@@ -200,18 +118,7 @@ class YUZARE_Engine:
         atr = calculate_atr(candles, self.atr_period)
         ema_fast = calculate_ema(closes, 9)
         ema_slow = calculate_ema(closes, 21)
-
-        # 5 MT5 Confluence Indicators (User's Exact MT5 mobile setup):
-        # 1. Moving Average: SMA 9 (Metode: Mudah / Simple, Tutup)
-        sma9 = calculate_sma(closes, 9)
-        # 2. Bollinger Bands: Periode 20, Deviasi 2.0, Tutup
-        bb_mid, bb_upper, bb_lower = calculate_bollinger_bands(closes, 20, 2.0)
-        # 3. Parabolic SAR: Langkah 0.02, Maksimum 0.20
-        sar, sar_trend = calculate_psar(highs, lows, 0.02, 0.20)
-        # 4. RSI: Periode 8, Level 30 & 70, Tutup
-        rsi8 = calculate_rsi(closes, 8)
-        # 5. MACD: EMA Cepat 12, EMA Lambat 26, Signal SMA 1, Tutup
-        macd = calculate_macd(closes, 12, 26)
+        rsi = calculate_rsi(closes, 14)
 
         # QRR Volatility Bands
         hl2 = [(h + l) / 2.0 for h, l in zip(highs, lows)]
@@ -309,30 +216,6 @@ class YUZARE_Engine:
         recent_sh = sorted(untouched_sh, key=lambda x: x["price"])[:2]
         recent_sl = sorted(untouched_sl, key=lambda x: x["price"], reverse=True)[:2]
 
-        # Fallback jika pasar breakout ekstrim sehingga swing belum terbentuk di atas/bawah harga
-        round_step = 10.0 if current_price > 1000 else 0.0050
-        if len(recent_sh) == 0:
-            target1 = math.ceil(current_price / round_step) * round_step
-            p1 = target1 if target1 > current_price else current_price + round_step
-            recent_sh = [
-                {"index": n - 1, "price": p1, "zone_bound": p1 - (round_step * 0.3)},
-                {"index": n - 1, "price": p1 + round_step, "zone_bound": p1 + (round_step * 0.7)}
-            ]
-        elif len(recent_sh) == 1:
-            p_extra = recent_sh[0]["price"] + round_step
-            recent_sh.append({"index": n - 1, "price": p_extra, "zone_bound": p_extra - (round_step * 0.3)})
-
-        if len(recent_sl) == 0:
-            target1 = math.floor(current_price / round_step) * round_step
-            p1 = target1 if target1 < current_price else current_price - round_step
-            recent_sl = [
-                {"index": n - 1, "price": p1, "zone_bound": p1 + (round_step * 0.3)},
-                {"index": n - 1, "price": p1 - round_step, "zone_bound": p1 - (round_step * 0.7)}
-            ]
-        elif len(recent_sl) == 1:
-            p_extra = recent_sl[0]["price"] - round_step
-            recent_sl.append({"index": n - 1, "price": p_extra, "zone_bound": p_extra + (round_step * 0.3)})
-
         for sh in recent_sh:
             pending_zones.append({
                 "id": f"ps_{sh['index']}",
@@ -357,7 +240,7 @@ class YUZARE_Engine:
                 "distance_pips": round((current_price - sl["price"]) / pip_unit, 1)
             })
 
-        # 3. Dual Signal Generation (Zero Repaint - Confluence 5 Indikator MT5)
+        # 3. Dual Signal Generation (Zero Repaint - Bar Close Evaluated)
         signals = []
         buy_trades = []
         sell_trades = []
@@ -368,48 +251,28 @@ class YUZARE_Engine:
         last_sell_bar = -999
         cooldown = 4 # allow dual flow while keeping chart crisp
 
-        for i in range(20, n):
+        for i in range(15, n):
             c_curr = candles[i]
             cur_atr = atr[i] if atr[i] > 0 else 1.0
 
-            # 1. Moving Average SMA 9 Filter (Metode Mudah / Tutup)
-            sma9_bull = closes[i] >= sma9[i]
-            sma9_bear = closes[i] <= sma9[i]
-
-            # 2. Parabolic SAR Filter (Langkah 0.02, Maksimum 0.20)
-            sar_bull = (sar_trend[i] == 1)
-            sar_bear = (sar_trend[i] == -1)
-            sar_flip_bull = (sar_trend[i] == 1 and sar_trend[i - 1] == -1)
-            sar_flip_bear = (sar_trend[i] == -1 and sar_trend[i - 1] == 1)
-
-            # 3. Bollinger Bands Filter (20, 2.0 Tutup)
-            bb_bull = (closes[i] <= bb_upper[i] + 0.15 * cur_atr) and (closes[i] >= bb_lower[i])
-            bb_bear = (closes[i] >= bb_lower[i] - 0.15 * cur_atr) and (closes[i] <= bb_upper[i])
-
-            # 4. RSI 8 Filter (Level 30 & 70 Tutup)
-            rsi_bull = (32 <= rsi8[i] <= 78) and (rsi8[i] >= rsi8[i - 1] - 3.0 or rsi8[i] >= 48)
-            rsi_bear = (22 <= rsi8[i] <= 68) and (rsi8[i] <= rsi8[i - 1] + 3.0 or rsi8[i] <= 52)
-
-            # 5. MACD Filter (12, 26, Signal SMA 1)
-            macd_bull = (macd[i] >= macd[i - 1]) or (macd[i] > 0)
-            macd_bear = (macd[i] <= macd[i - 1]) or (macd[i] < 0)
-
-            # Core YUZARE Triggers
+            # Trend reversal trigger or trend pullback continuation
+            # BUY:
+            # 1. Trend flipped from -1 to 1 (Major reversal) OR
+            # 2. In uptrend (trend==1), price dipped to EMA/lower wick and candle closed strong green
             is_trend_flip_up = (trend[i] == 1 and trend[i - 1] == -1)
-            is_pullback_buy = (trend[i] == 1 and closes[i] > opens[i] and lows[i] <= up_band[i] + 0.35 * cur_atr and closes[i] > closes[i - 1])
-            is_breakout_buy = (trend[i] == 1 and closes[i] > max(closes[i - 1], closes[i - 2]) and (closes[i] - opens[i]) > 0.25 * cur_atr)
-            buy_trigger = is_trend_flip_up or is_pullback_buy or is_breakout_buy or sar_flip_bull
+            is_pullback_buy = (trend[i] == 1 and closes[i] > opens[i] and lows[i] <= up_band[i] + 0.3 * cur_atr and closes[i] > closes[i - 1])
+            is_breakout_buy = (trend[i] == 1 and closes[i] > max(closes[i - 1], closes[i - 2]) and (closes[i] - opens[i]) > 0.3 * cur_atr)
 
-            # BUY Confluence: Candle hijau + SMA9/SAR konfirmasi + BB dalam rentang + RSI 8 momentum + MACD naik
-            buy_cond = (closes[i] > opens[i]) and (sma9_bull or sar_bull) and bb_bull and rsi_bull and macd_bull and buy_trigger
+            buy_cond = (is_trend_flip_up or is_pullback_buy or is_breakout_buy) and (closes[i] > opens[i]) and (rsi[i] >= 42)
 
+            # SELL:
+            # 1. Trend flipped from 1 to -1 (Major reversal) OR
+            # 2. In downtrend (trend==-1), price rallied to EMA/upper wick and candle closed strong red
             is_trend_flip_dn = (trend[i] == -1 and trend[i - 1] == 1)
-            is_pullback_sell = (trend[i] == -1 and closes[i] < opens[i] and highs[i] >= dn_band[i] - 0.35 * cur_atr and closes[i] < closes[i - 1])
-            is_breakout_sell = (trend[i] == -1 and closes[i] < min(closes[i - 1], closes[i - 2]) and (opens[i] - closes[i]) > 0.25 * cur_atr)
-            sell_trigger = is_trend_flip_dn or is_pullback_sell or is_breakout_sell or sar_flip_bear
+            is_pullback_sell = (trend[i] == -1 and closes[i] < opens[i] and highs[i] >= dn_band[i] - 0.3 * cur_atr and closes[i] < closes[i - 1])
+            is_breakout_sell = (trend[i] == -1 and closes[i] < min(closes[i - 1], closes[i - 2]) and (opens[i] - closes[i]) > 0.3 * cur_atr)
 
-            # SELL Confluence: Candle merah + SMA9/SAR konfirmasi + BB dalam rentang + RSI 8 momentum + MACD turun
-            sell_cond = (closes[i] < opens[i]) and (sma9_bear or sar_bear) and bb_bear and rsi_bear and macd_bear and sell_trigger
+            sell_cond = (is_trend_flip_dn or is_pullback_sell or is_breakout_sell) and (closes[i] < opens[i]) and (rsi[i] <= 58)
 
             # BUY Trigger
             if buy_cond and (i - last_buy_bar >= cooldown):
@@ -597,17 +460,6 @@ class YUZARE_Engine:
         total_decided = len(tp_hits) + len(sl_hits)
         win_rate = (len(tp_hits) / total_decided * 100.0) if total_decided > 0 else 0.0
 
-        mt5_indicators = {
-            "sma9": round(sma9[-1], 2) if sma9 else 0.0,
-            "bb_upper": round(bb_upper[-1], 2) if bb_upper else 0.0,
-            "bb_mid": round(bb_mid[-1], 2) if bb_mid else 0.0,
-            "bb_lower": round(bb_lower[-1], 2) if bb_lower else 0.0,
-            "sar": round(sar[-1], 2) if sar else 0.0,
-            "sar_trend": "BULLISH" if sar_trend and sar_trend[-1] == 1 else "BEARISH",
-            "rsi8": round(rsi8[-1], 2) if rsi8 else 50.0,
-            "macd": round(macd[-1], 2) if macd else 0.0
-        }
-
         stats = {
             "total_signals": total_signals,
             "completed_trades": total_decided,
@@ -615,8 +467,7 @@ class YUZARE_Engine:
             "sl_hits": len(sl_hits),
             "win_rate": round(win_rate, 1),
             "active_buy_count": len(active_buy_trades),
-            "active_sell_count": len(active_sell_trades),
-            "indicators": mt5_indicators
+            "active_sell_count": len(active_sell_trades)
         }
 
         latest_buy = active_buy_trades[-1] if active_buy_trades else (buy_trades[-1] if buy_trades else None)
@@ -631,8 +482,7 @@ class YUZARE_Engine:
             "latest_buy": latest_buy,
             "latest_sell": latest_sell,
             "stats": stats,
-            "current_price": current_price,
-            "indicators": mt5_indicators
+            "current_price": current_price
         }
 
 # Backward compatibility alias
