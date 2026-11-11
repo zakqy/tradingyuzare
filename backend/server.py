@@ -43,8 +43,6 @@ engine = YUZARE_Engine()
 # Pair mapping dengan offset kalibrasi default untuk menyesuaikan dengan broker MT5
 PAIR_MAP = {
     "XAUUSD": {"binance": "PAXGUSDT", "tv_symbol": "OANDA:XAUUSD", "name": "Emas / Dollar A.S. (XAUUSD · OANDA)", "type": "Metals", "digits": 2, "pip": 0.1, "default_offset": 0.0},
-    "NAS100USD": {"binance": "QQQBUSDT", "tv_symbol": "OANDA:NAS100USD", "name": "US Nas 100 (NAS100USD · OANDA)", "type": "Indices", "digits": 1, "pip": 0.1, "default_offset": 0.0},
-    "USA100": {"binance": "QQQBUSDT", "tv_symbol": "OANDA:NAS100USD", "name": "US Nas 100 (NAS100USD · OANDA)", "type": "Indices", "digits": 1, "pip": 0.1, "default_offset": 0.0},
     "BTCUSD": {"binance": "BTCUSDT", "name": "Bitcoin / Tether", "type": "Crypto", "digits": 2, "pip": 1.0, "default_offset": 0.0},
     "ETHUSD": {"binance": "ETHUSDT", "name": "Ethereum / Tether", "type": "Crypto", "digits": 2, "pip": 0.1, "default_offset": 0.0},
     "SOLUSD": {"binance": "SOLUSDT", "name": "Solana / Tether", "type": "Crypto", "digits": 2, "pip": 0.01, "default_offset": 0.0},
@@ -200,7 +198,7 @@ def fetch_tradingview_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1m",
         return []
 
 def fetch_market_klines(symbol: str, interval: str, limit: int = 2500, offset: float = 0.0) -> List[Dict[str, Any]]:
-    """Mengambil candlestick OANDA (XAUUSD & NAS100USD) dari TradingView atau fallback Binance Vision"""
+    """Mengambil candlestick OANDA (XAUUSD) dari TradingView atau fallback Binance Vision"""
     pair_cfg = PAIR_MAP.get(symbol, {})
     tv_symbol = pair_cfg.get("tv_symbol")
     if tv_symbol:
