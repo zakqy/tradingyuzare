@@ -825,8 +825,13 @@ async function loadMarketData() {
       state.lastPrice = state.lastCandle.close;
     }
 
-    if (state.chart) {
-      state.chart.timeScale().fitContent();
+    if (state.chart && state.candles.length > 0) {
+      const totalBars = state.candles.length;
+      const visibleBars = 85;
+      state.chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, totalBars - visibleBars),
+        to: totalBars + 12
+      });
     }
 
     applyMarkers(state.signals);
