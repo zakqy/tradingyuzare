@@ -91,6 +91,7 @@ const state = {
   lastTickTime: Date.now(),
   lastCandle: null,
   lastPrice: 0,
+  loadSeq: 0,
 };
 
 function applyTimeframeSettings(tf) {
@@ -598,7 +599,8 @@ function computeClientSideIndicators(candles, tf = state.timeframe) {
 
 // TradingView Real-Time Price Fetcher (OANDA:XAUUSD & OANDA:NAS100USD)
 async function syncTradingViewOandaPrice() {
-  if (state.symbol === 'XAUUSD') {
+  const currentSym = state.symbol;
+  if (currentSym === 'XAUUSD') {
     try {
       const resp = await fetch('https://scanner.tradingview.com/cfd/scan', {
         method: 'POST',
@@ -610,6 +612,7 @@ async function syncTradingViewOandaPrice() {
       });
       if (resp.ok) {
         const json = await resp.json();
+        if (state.symbol !== currentSym) return null;
         if (json.data && json.data.length > 0) {
           const tvData = json.data[0].d;
           const tvClose = parseFloat(tvData[0]);
@@ -628,7 +631,7 @@ async function syncTradingViewOandaPrice() {
     } catch (e) {
       console.warn('TradingView XAUUSD scanner sync error:', e);
     }
-  } else if (state.symbol === 'NAS100USD' || state.symbol === 'USA100') {
+  } else if (currentSym === 'NAS100USD' || currentSym === 'USA100') {
     try {
       const resp = await fetch('https://scanner.tradingview.com/global/scan', {
         method: 'POST',
@@ -640,6 +643,7 @@ async function syncTradingViewOandaPrice() {
       });
       if (resp.ok) {
         const json = await resp.json();
+        if (state.symbol !== currentSym) return null;
         if (json.data && json.data.length > 0) {
           const tvData = json.data[0].d;
           const tvClose = parseFloat(tvData[0]);
@@ -710,8 +714,73 @@ async function fetchBinanceKlinesClient(binanceSym, interval, targetLimit = 2500
   return allRaw;
 }
 
+// Cleanly wipe all price lines, badges, and active trade states on pair/timeframe switch
+function clearAllChartOverlaysAndTrades() {
+  // 1. Remove all TPSL price lines from candleSeries
+  if (state.tpslLines && state.candleSeries) {
+    state.tpslLines.forEach(line => {
+      try { state.candleSeries.removePriceLine(line); } catch (e) {}
+    });
+  }
+  state.tpslLines = [];
+
+  // 2. Remove all pending zone price lines from candleSeries
+  if (state.pendingPriceLines && state.candleSeries) {
+    state.pendingPriceLines.forEach(line => {
+      try { state.candleSeries.removePriceLine(line); } catch (e) {}
+    });
+  }
+  state.pendingPriceLines = [];
+
+  // 3. Clear HTML badges and overlay DOM elements
+  const sigOverlay = document.getElementById('signals-overlay');
+  if (sigOverlay) sigOverlay.innerHTML = '';
+  const pzOverlay = document.getElementById('pending-zones-overlay');
+  if (pzOverlay) pzOverlay.innerHTML = '';
+  if (state.candleSeries) {
+    try { state.candleSeries.setMarkers([]); } catch (e) {}
+  }
+
+  // 4. Reset trade & signal state
+  state.signals = [];
+  state.pendingZones = [];
+  state.activeBuy = null;
+  state.activeSell = null;
+  state.lastCandle = null;
+
+  // 5. Reset sidebar cards to clean waiting state
+  const buyEntryEl = document.getElementById('buy-entry-val');
+  if (buyEntryEl) buyEntryEl.textContent = '--.--';
+  const buyBadge = document.getElementById('buy-status-badge');
+  if (buyBadge) buyBadge.textContent = 'WAITING';
+  const buyPnlEl = document.getElementById('buy-pnl-val');
+  if (buyPnlEl) { buyPnlEl.textContent = '+0.00 pts'; buyPnlEl.className = 'live-pnl neutral'; }
+
+  const sellEntryEl = document.getElementById('sell-entry-val');
+  if (sellEntryEl) sellEntryEl.textContent = '--.--';
+  const sellBadge = document.getElementById('sell-status-badge');
+  if (sellBadge) sellBadge.textContent = 'WAITING';
+  const sellPnlEl = document.getElementById('sell-pnl-val');
+  if (sellPnlEl) { sellPnlEl.textContent = '+0.00 pts'; sellPnlEl.className = 'live-pnl neutral'; }
+
+  const buyGrid = document.getElementById('buy-target-grid');
+  if (buyGrid) buyGrid.innerHTML = renderTargetGridHTML('BUY', null);
+  const sellGrid = document.getElementById('sell-target-grid');
+  if (sellGrid) sellGrid.innerHTML = renderTargetGridHTML('SELL', null);
+
+  const pzList = document.getElementById('pending-zones-list');
+  if (pzList) pzList.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 10px;">Memuat level pending...</div>';
+  const countLabel = document.getElementById('pending-count-label');
+  if (countLabel) countLabel.textContent = 'Memuat...';
+}
+
 // Fetch Market Data (Supports Local API & Direct Binance API for GitHub Pages)
 async function loadMarketData() {
+  state.loadSeq = (state.loadSeq || 0) + 1;
+  const currentSeq = state.loadSeq;
+  const targetSymbol = state.symbol;
+  const targetTf = state.timeframe;
+
   showToast('🔄 Memuat analisa YUZARE...', '⏳');
   try {
     let data = null;
@@ -729,13 +798,21 @@ async function loadMarketData() {
       }
     }
 
+    // Cancel if outdated request
+    if (currentSeq !== state.loadSeq || targetSymbol !== state.symbol || targetTf !== state.timeframe) return;
+
     // Direct Binance Vision API fallback for GitHub Pages!
     if (!data) {
       if (['XAUUSD', 'NAS100USD', 'USA100'].includes(state.symbol)) {
         await syncTradingViewOandaPrice();
       }
+
+      if (currentSeq !== state.loadSeq || targetSymbol !== state.symbol || targetTf !== state.timeframe) return;
+
       const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
       const raw = await fetchBinanceKlinesClient(binanceSym, state.timeframe, targetLimit);
+
+      if (currentSeq !== state.loadSeq || targetSymbol !== state.symbol || targetTf !== state.timeframe) return;
 
       const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
       if (raw.length > 0) {
@@ -778,22 +855,33 @@ async function loadMarketData() {
       data = computeClientSideIndicators(rawCandles, state.timeframe);
     }
 
-    state.candles = data.candles;
-    state.signals = data.signals;
-    state.pendingZones = data.pending_zones;
-    state.activeBuy = data.latest_buy;
-    state.activeSell = data.latest_sell;
+    if (currentSeq !== state.loadSeq || targetSymbol !== state.symbol || targetTf !== state.timeframe) return;
 
-    state.candleSeries.setData(state.candles);
+    state.candles = data.candles || [];
+    state.signals = data.signals || [];
+    state.pendingZones = data.pending_zones || [];
+    state.activeBuy = data.latest_buy || null;
+    state.activeSell = data.latest_sell || null;
+
+    if (state.candleSeries) {
+      state.candleSeries.setData(state.candles);
+    }
     if (state.candles.length > 0) {
       state.lastCandle = { ...state.candles[state.candles.length - 1] };
+      state.lastPrice = state.lastCandle.close;
+    }
+
+    if (state.chart) {
+      state.chart.timeScale().fitContent();
     }
 
     applyMarkers(state.signals);
     renderPendingZonesOverlay();
     renderTPSLLines();
     updateSidebar(data);
-    updateOHLC(state.candles[state.candles.length - 1]);
+    if (state.candles.length > 0) {
+      updateOHLC(state.candles[state.candles.length - 1]);
+    }
 
     // Auto-fetch multi-timeframe stats in background if not fully loaded yet
     const hasAllTFStats = ALL_TF_LIST.every(tf => state.all_tf_stats[tf] && state.all_tf_stats[tf].total_signals > 0);
@@ -888,19 +976,22 @@ async function loadAllTimeframeStats(force = false) {
 
 // Silent background refresh on bar close
 async function refreshSignalsSilently() {
+  const refreshSym = state.symbol;
+  const refreshTf = state.timeframe;
   try {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
     if (isLocal) {
       const tpStr = (state.tp_targets || []).join(',');
-      const targetLimit = TF_CANDLE_LIMITS[state.timeframe] || 2000;
-      const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&limit=${targetLimit}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
+      const targetLimit = TF_CANDLE_LIMITS[refreshTf] || 2000;
+      const url = `/api/analysis?symbol=${refreshSym}&timeframe=${refreshTf}&limit=${targetLimit}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
-        state.signals = data.signals;
-        state.pendingZones = data.pending_zones;
-        state.activeBuy = data.latest_buy;
-        state.activeSell = data.latest_sell;
+        if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
+        state.signals = data.signals || [];
+        state.pendingZones = data.pending_zones || [];
+        state.activeBuy = data.latest_buy || null;
+        state.activeSell = data.latest_sell || null;
         applyMarkers(state.signals);
         renderPendingZonesOverlay();
         renderTPSLLines();
@@ -909,11 +1000,13 @@ async function refreshSignalsSilently() {
       }
     }
     // Client-side refresh
+    if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
     const data = computeClientSideIndicators(state.candles);
-    applyMarkers(data.signals);
-    state.pendingZones = data.pending_zones;
-    state.activeBuy = data.latest_buy;
-    state.activeSell = data.latest_sell;
+    if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
+    applyMarkers(data.signals || []);
+    state.pendingZones = data.pending_zones || [];
+    state.activeBuy = data.latest_buy || null;
+    state.activeSell = data.latest_sell || null;
     renderPendingZonesOverlay();
     renderTPSLLines();
     updateSidebar(data);
@@ -932,8 +1025,12 @@ function renderSignalBadges() {
   if (!chartContainer) return;
   const chartWidth = chartContainer.clientWidth;
   const chartHeight = chartContainer.clientHeight;
+  const curPrice = state.lastPrice || (state.candles.length > 0 ? state.candles[state.candles.length - 1].close : 0);
 
   state.signals.forEach(sig => {
+    // Sanity check: abaikan sinyal hantu jika harga berbeda > 40% dari aset aktif saat ini
+    if (curPrice > 0 && Math.abs(sig.price - curPrice) > curPrice * 0.4) return;
+
     const x = state.chart.timeScale().timeToCoordinate(sig.time);
     if (x === null || x < 0 || x > chartWidth) return;
 
@@ -973,7 +1070,15 @@ function renderPendingZonesOverlay() {
   }
   state.pendingPriceLines = [];
 
-  if (!state.pendingZones || state.pendingZones.length === 0) {
+  const curPrice = state.lastPrice || (state.candles.length > 0 ? state.candles[state.candles.length - 1].close : 0);
+
+  // Sanity check: buang pending zone dari aset lain yang selisih harganya > 40%
+  const validZonesPool = (state.pendingZones || []).filter(z => {
+    if (!curPrice || curPrice <= 0) return true;
+    return Math.abs(z.price - curPrice) < curPrice * 0.4;
+  });
+
+  if (validZonesPool.length === 0) {
     const pzList = document.getElementById('pending-zones-list');
     if (pzList) pzList.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 10px;">Semua level pending telah tersentuh / selesai.</div>';
     const countLabel = document.getElementById('pending-count-label');
@@ -981,15 +1086,13 @@ function renderPendingZonesOverlay() {
     return;
   }
 
-  const curPrice = state.lastPrice || (state.candles.length > 0 ? state.candles[state.candles.length - 1].close : 0);
-
   // 2. Filter: Hilangkan jika harga saat ini sudah mencapai/menyentuh pending level (Hit SELL LIMIT / BUY LIMIT)
-  const activeSellLimits = state.pendingZones
+  const activeSellLimits = validZonesPool
     .filter(z => z.type === 'pending_sell' && curPrice < z.price)
     .sort((a, b) => a.price - b.price)
     .slice(0, 2);
 
-  const activeBuyLimits = state.pendingZones
+  const activeBuyLimits = validZonesPool
     .filter(z => z.type === 'pending_buy' && curPrice > z.price)
     .sort((a, b) => b.price - a.price)
     .slice(0, 2);
@@ -1067,8 +1170,20 @@ function renderTPSLLines() {
   }
   state.tpslLines = [];
 
+  const curPrice = state.lastPrice || (state.candles.length > 0 ? state.candles[state.candles.length - 1].close : 0);
+
+  // Buang active trade hantu jika harganya menyimpang > 40% dari aset aktif
+  if (state.activeBuy && curPrice > 0 && Math.abs(state.activeBuy.entry - curPrice) > curPrice * 0.4) {
+    state.activeBuy = null;
+  }
+  if (state.activeSell && curPrice > 0 && Math.abs(state.activeSell.entry - curPrice) > curPrice * 0.4) {
+    state.activeSell = null;
+  }
+
   const addLine = (price, title, color, style = LightweightCharts.LineStyle.Dashed, width = 1) => {
     if (!price || !state.candleSeries) return;
+    // Jangan pernah tambahkan price line yang melenceng jauh dari harga chart saat ini
+    if (curPrice > 0 && Math.abs(price - curPrice) > curPrice * 0.4) return;
     try {
       const l = state.candleSeries.createPriceLine({
         price,
@@ -1206,15 +1321,25 @@ function renderTargetGridHTML(type, trade) {
 function updateSidebar(data) {
   const curPrice = data.current_price;
   state.lastPrice = curPrice;
+  const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
+  const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
+  const digits = isForex ? 4 : (isNas ? 1 : 2);
 
   if (state.activeBuy) {
     const b = state.activeBuy;
     if (b.tp1_hit || (b.tps && b.tps.some(x => x.hit))) b._counted_tp = true;
     if (b.sl_hit) b._counted_sl = true;
     const entryEl = document.getElementById('buy-entry-val');
-    if (entryEl) entryEl.textContent = b.entry.toFixed(2);
+    if (entryEl) entryEl.textContent = b.entry.toFixed(digits);
     const bBadge = document.getElementById('buy-status-badge');
     if (bBadge) bBadge.textContent = b.status || 'ACTIVE';
+  } else {
+    const entryEl = document.getElementById('buy-entry-val');
+    if (entryEl) entryEl.textContent = '--.--';
+    const bBadge = document.getElementById('buy-status-badge');
+    if (bBadge) bBadge.textContent = 'WAITING';
+    const pnlEl = document.getElementById('buy-pnl-val');
+    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
   }
 
   if (state.activeSell) {
@@ -1222,9 +1347,16 @@ function updateSidebar(data) {
     if (s.tp1_hit || (s.tps && s.tps.some(x => x.hit))) s._counted_tp = true;
     if (s.sl_hit) s._counted_sl = true;
     const entryEl = document.getElementById('sell-entry-val');
-    if (entryEl) entryEl.textContent = s.entry.toFixed(2);
+    if (entryEl) entryEl.textContent = s.entry.toFixed(digits);
     const sBadge = document.getElementById('sell-status-badge');
     if (sBadge) sBadge.textContent = s.status || 'ACTIVE';
+  } else {
+    const entryEl = document.getElementById('sell-entry-val');
+    if (entryEl) entryEl.textContent = '--.--';
+    const sBadge = document.getElementById('sell-status-badge');
+    if (sBadge) sBadge.textContent = 'WAITING';
+    const pnlEl = document.getElementById('sell-pnl-val');
+    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
   }
 
   const buyGrid = document.getElementById('buy-target-grid');
@@ -1319,6 +1451,12 @@ function applyPriceTick(price) {
   state.lastPrice = price;
 
   if (state.lastCandle) {
+    // Sanity check: Jika harga tick berbeda > 40% dari candle terakhir, abaikan update candle
+    // agar chart tidak melar / squished karena perbedaan harga antar pair (misal XAUUSD 4014 vs NAS100 28000)
+    if (Math.abs(price - state.lastCandle.close) > state.lastCandle.close * 0.4) {
+      return;
+    }
+
     state.lastCandle.close = price;
     if (price > state.lastCandle.high) state.lastCandle.high = price;
     if (price < state.lastCandle.low) state.lastCandle.low = price;
@@ -1327,13 +1465,46 @@ function applyPriceTick(price) {
       state.lastCandle.low = Math.round((price - 0.05) * 100) / 100;
     }
     state.lastCandle.color = state.lastCandle.close >= state.lastCandle.open ? '#00c853' : '#f23645';
-    state.candleSeries.update(state.lastCandle);
+    if (state.candleSeries) {
+      state.candleSeries.update(state.lastCandle);
+    }
     updateOHLC(state.lastCandle);
   }
   updateSidebarPrice(price);
 }
 
 function updateSidebarPrice(currentPrice) {
+  // Sanity check: Buang active trade hantu jika harga menyimpang > 40% dari aset aktif
+  if (state.activeBuy && Math.abs(currentPrice - state.activeBuy.entry) > state.activeBuy.entry * 0.4) {
+    state.activeBuy = null;
+    renderTPSLLines();
+    const entryEl = document.getElementById('buy-entry-val');
+    if (entryEl) entryEl.textContent = '--.--';
+    const bBadge = document.getElementById('buy-status-badge');
+    if (bBadge) bBadge.textContent = 'WAITING';
+    const pnlEl = document.getElementById('buy-pnl-val');
+    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
+  }
+  if (state.activeSell && Math.abs(currentPrice - state.activeSell.entry) > state.activeSell.entry * 0.4) {
+    state.activeSell = null;
+    renderTPSLLines();
+    const entryEl = document.getElementById('sell-entry-val');
+    if (entryEl) entryEl.textContent = '--.--';
+    const sBadge = document.getElementById('sell-status-badge');
+    if (sBadge) sBadge.textContent = 'WAITING';
+    const pnlEl = document.getElementById('sell-pnl-val');
+    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
+  }
+
+  // Sanity check: Buang pending zones yang bukan milik harga aset saat ini
+  if (state.pendingZones && state.pendingZones.length > 0) {
+    const validZones = state.pendingZones.filter(z => Math.abs(z.price - currentPrice) < currentPrice * 0.4);
+    if (validZones.length !== state.pendingZones.length) {
+      state.pendingZones = validZones;
+      renderPendingZonesOverlay();
+    }
+  }
+
   // Real-time Target Hit Check: langsung hapus garis jika sudah hit TP / SL / Pending Limit
   let needsTPSLRedraw = false;
 
@@ -1485,11 +1656,15 @@ function updateSidebarPrice(currentPrice) {
   }
 
   // Update kartu sidebar
+  const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
+  const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
+  const digits = isForex ? 4 : (isNas ? 1 : 2);
+
   if (state.activeBuy) {
     const pnl = currentPrice - state.activeBuy.entry;
     const pnlEl = document.getElementById('buy-pnl-val');
     if (pnlEl) {
-      pnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} pts`;
+      pnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(digits)} pts`;
       pnlEl.style.color = pnl >= 0 ? 'var(--buy-green)' : 'var(--sell-red)';
     }
     const badge = document.getElementById('buy-status-badge');
@@ -1500,7 +1675,7 @@ function updateSidebarPrice(currentPrice) {
     const pnl = state.activeSell.entry - currentPrice;
     const pnlEl = document.getElementById('sell-pnl-val');
     if (pnlEl) {
-      pnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} pts`;
+      pnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(digits)} pts`;
       pnlEl.style.color = pnl >= 0 ? 'var(--buy-green)' : 'var(--sell-red)';
     }
     const badge = document.getElementById('sell-status-badge');
@@ -1535,37 +1710,48 @@ function updateOHLC(c) {
 // WebSocket Stream (Supports both Local WebSocket & Direct Binance Stream with 0ms MT5 Speed)
 function startWebSocket() {
   if (state.ws) {
+    state.ws.onclose = null;
+    state.ws.onerror = null;
+    state.ws.onmessage = null;
     try { state.ws.close(); } catch(e) {}
+    state.ws = null;
   }
 
+  const wsSymbol = state.symbol;
+  const wsTf = state.timeframe;
   const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-  const binanceSym = (PAIR_MAP[state.symbol] || 'PAXGUSDT').toLowerCase();
-  const offset = state.symbol === 'XAUUSD' ? state.offset : 0.0;
+  const binanceSym = (PAIR_MAP[wsSymbol] || 'PAXGUSDT').toLowerCase();
+  const offset = wsSymbol === 'XAUUSD' ? state.offset : 0.0;
 
   let wsUrl = '';
   if (isLocal) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl = `${protocol}//${window.location.host}/ws/live/${state.symbol}/${state.timeframe}`;
+    wsUrl = `${protocol}//${window.location.host}/ws/live/${wsSymbol}/${wsTf}`;
   } else {
     // Ultra-Fast Multi-Stream: aggTrade (0ms executions) + bookTicker (live Bid/Ask) + kline (bars)
     const streams = [
       `${binanceSym}@aggTrade`,
       `${binanceSym}@bookTicker`,
-      `${binanceSym}@kline_${state.timeframe}`
+      `${binanceSym}@kline_${wsTf}`
     ].join('/');
     wsUrl = `wss://data-stream.binance.vision/stream?streams=${streams}`;
   }
 
   const statusText = document.getElementById('ws-status-text');
-  statusText.textContent = `Connecting to real-time stream (${state.symbol})...`;
+  if (statusText) statusText.textContent = `Connecting to real-time stream (${wsSymbol})...`;
 
-  state.ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(wsUrl);
+  ws._symbol = wsSymbol;
+  ws._timeframe = wsTf;
+  state.ws = ws;
 
-  state.ws.onopen = () => {
-    statusText.textContent = `Live Stream: Connected · 0ms MT5 Speed (${state.symbol} · ${state.timeframe})`;
+  ws.onopen = () => {
+    if (ws !== state.ws || ws._symbol !== state.symbol) return;
+    if (statusText) statusText.textContent = `Live Stream: Connected · 0ms MT5 Speed (${wsSymbol} · ${wsTf})`;
   };
 
-  state.ws.onmessage = (event) => {
+  ws.onmessage = (event) => {
+    if (ws !== state.ws || ws._symbol !== state.symbol || ws._timeframe !== state.timeframe) return;
     try {
       const raw = JSON.parse(event.data);
 
@@ -1645,9 +1831,14 @@ function startWebSocket() {
     }
   };
 
-  state.ws.onclose = () => {
-    statusText.textContent = `Stream reconnecting...`;
-    setTimeout(startWebSocket, 1000);
+  ws.onclose = () => {
+    if (ws !== state.ws || ws._symbol !== state.symbol) return;
+    if (statusText) statusText.textContent = `Stream reconnecting...`;
+    setTimeout(() => {
+      if (ws === state.ws && ws._symbol === state.symbol) {
+        startWebSocket();
+      }
+    }, 1000);
   };
 }
 
@@ -1657,26 +1848,28 @@ function startTickerHeartbeat() {
 
   state.tickerPollInterval = setInterval(async () => {
     if (Date.now() - state.lastTickTime > 1500) {
+      const pollSymbol = state.symbol;
       try {
         const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
         if (isLocal) {
-          const resp = await fetch(`/api/ticker?symbol=${state.symbol}`);
+          const resp = await fetch(`/api/ticker?symbol=${pollSymbol}`);
           if (resp.ok) {
             const d = await resp.json();
-            if (d.price && d.price > 0) applyPriceTick(d.price);
+            if (pollSymbol === state.symbol && d.price && d.price > 0) applyPriceTick(d.price);
           }
         } else {
-          if (['XAUUSD', 'NAS100USD', 'USA100'].includes(state.symbol)) {
+          if (['XAUUSD', 'NAS100USD', 'USA100'].includes(pollSymbol)) {
             const tvPrice = await syncTradingViewOandaPrice();
-            if (tvPrice && tvPrice > 1000) {
+            if (pollSymbol === state.symbol && tvPrice && tvPrice > 1000) {
               applyPriceTick(tvPrice);
               return;
             }
           }
-          const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
+          const binanceSym = PAIR_MAP[pollSymbol] || 'PAXGUSDT';
           const resp = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSym}`);
           if (resp.ok) {
             const d = await resp.json();
+            if (pollSymbol !== state.symbol) return;
             const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
             const mult = isNas ? (state.nasMultiplier || 41.047) : 1.0;
             const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
@@ -1792,6 +1985,25 @@ function setupEventListeners() {
     state.offset = saved !== null ? parseFloat(saved) : (state.symbol === 'XAUUSD' ? 8.5 : 0.0);
     updateOffsetDisplay();
     state.all_tf_stats = {};
+
+    // 1. Putus koneksi WebSocket lama seketika agar tidak menerima tick dari pair sebelumnya
+    if (state.ws) {
+      state.ws.onclose = null;
+      state.ws.onerror = null;
+      state.ws.onmessage = null;
+      try { state.ws.close(); } catch (err) {}
+      state.ws = null;
+    }
+
+    // 2. Bersihkan seketika seluruh garis TP/SL, pending zones, badges, dan active trades pair lama
+    clearAllChartOverlaysAndTrades();
+
+    // 3. Reset candlestick chart seketika agar autoscale tidak terkunci pada rentang harga pair lama
+    if (state.candleSeries) {
+      state.candleSeries.setData([]);
+    }
+
+    // 4. Muat data pair baru
     loadMarketData();
   });
 
@@ -1809,6 +2021,17 @@ function setupEventListeners() {
       document.getElementById('trading-mode-label').textContent = isScalp 
         ? `${state.timeframe.toUpperCase()} SCALPING` 
         : `${state.timeframe.toUpperCase()} SWING`;
+
+      // Bersihkan overlay & chart saat ganti timeframe
+      if (state.ws) {
+        state.ws.onclose = null;
+        try { state.ws.close(); } catch (err) {}
+        state.ws = null;
+      }
+      clearAllChartOverlaysAndTrades();
+      if (state.candleSeries) {
+        state.candleSeries.setData([]);
+      }
 
       loadMarketData();
     });
