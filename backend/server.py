@@ -5,6 +5,7 @@ FastAPI Web & WebSocket Server
 
 import os
 import sys
+import time
 import json
 import asyncio
 import logging
@@ -69,7 +70,7 @@ DEFAULT_TF_LIMITS = {
 
 def fetch_binance_klines(symbol: str, interval: str, limit: int = 2500, offset: float = 0.0) -> List[Dict[str, Any]]:
     """Fetch candlestick data from Binance Vision API dengan multi-batch pagination untuk menampilkan riwayat hari-hari sebelumnya"""
-    binance_symbol = PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT")
+    binance_symbol = str(PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT"))
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "application/json"
@@ -203,7 +204,7 @@ def fetch_market_klines(symbol: str, interval: str, limit: int = 2500, offset: f
     pair_cfg = PAIR_MAP.get(symbol, {})
     tv_symbol = pair_cfg.get("tv_symbol")
     if tv_symbol:
-        tv_candles = fetch_tradingview_klines(tv_symbol, interval, limit)
+        tv_candles = fetch_tradingview_klines(str(tv_symbol), interval, limit)
         if tv_candles and len(tv_candles) >= 20:
             digits: int = int(pair_cfg.get("digits", 2))
             if offset != 0.0:
@@ -292,7 +293,7 @@ def get_analysis(
     else:
         tp_list = [tp1_pips, tp2_pips, tp3_pips, tp4_pips]
 
-    pip_unit = PAIR_MAP.get(symbol, {}).get("pip", 0.1)
+    pip_unit: float = float(PAIR_MAP.get(symbol, {}).get("pip", 0.1))
     result = engine.analyze(
         candles, 
         sl_pips=sl_pips, 
@@ -347,7 +348,7 @@ def get_all_stats(
     tot_tp = 0
     tot_sl = 0
 
-    pip_unit = PAIR_MAP.get(symbol, {}).get("pip", 0.1)
+    pip_unit: float = float(PAIR_MAP.get(symbol, {}).get("pip", 0.1))
     for tf in TIMEFRAMES:
         tf_limit = DEFAULT_TF_LIMITS.get(tf, 1000)
         candles = fetch_market_klines(symbol, tf, limit=tf_limit, offset=offset)
@@ -399,10 +400,9 @@ manager = ConnectionManager()
 @app.get("/api/ticker")
 def get_ticker(symbol: str = Query("XAUUSD")):
     """Mengambil harga ticker terkini secara cepat dengan offset MT5"""
-    import time
     symbol = symbol.upper()
-    binance_symbol = PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT")
-    offset = broker_offsets.get(symbol, 0.0)
+    binance_symbol = str(PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT"))
+    offset = float(broker_offsets.get(symbol, 0.0))
     url = f"https://data-api.binance.vision/api/v3/ticker/price?symbol={binance_symbol}"
     try:
         resp = requests.get(url, timeout=3, headers={"User-Agent": "Mozilla/5.0"})
@@ -420,8 +420,7 @@ def get_ticker(symbol: str = Query("XAUUSD")):
 @app.post("/api/mt5_tick")
 async def receive_mt5_tick(tick: Dict[str, Any]):
     """Menerima tick langsung dari MetaTrader 5 (MT5 EA Bridge)"""
-    import time
-    sym = tick.get("symbol", "XAUUSD").upper()
+    sym = str(tick.get("symbol", "XAUUSD")).upper()
     bid = float(tick.get("bid", 0))
     ask = float(tick.get("ask", 0))
     if bid > 0:
@@ -443,7 +442,7 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
     """
     await manager.connect(websocket)
     symbol = symbol.upper()
-    binance_symbol = PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT").lower()
+    binance_symbol = str(PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT")).lower()
     # Menggunakan combined stream kline + aggTrade (0ms delay) + bookTicker agar chart bergerak instan secepat MT5!
     ws_url = f"wss://data-stream.binance.vision/stream?streams={binance_symbol}@kline_{timeframe}/{binance_symbol}@aggTrade/{binance_symbol}@bookTicker"
 
