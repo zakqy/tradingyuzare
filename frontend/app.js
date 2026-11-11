@@ -1608,8 +1608,30 @@ function startCountdown() {
   }, 1000);
 }
 
+// Watermark Updater (TradingView Native Style)
+function updateWatermark() {
+  const symEl = document.getElementById('wm-symbol-name');
+  const tfEl = document.getElementById('wm-timeframe');
+  const feedEl = document.getElementById('wm-feed');
+
+  const FEED_NAMES = {
+    XAUUSD: 'OANDA',
+    USA100: 'NASDAQ',
+    BTCUSD: 'BINANCE',
+    ETHUSD: 'BINANCE',
+    SOLUSD: 'BINANCE',
+    EURUSD: 'OANDA',
+    GBPUSD: 'OANDA',
+  };
+
+  if (symEl) symEl.textContent = state.symbol;
+  if (tfEl) tfEl.textContent = state.timeframe;
+  if (feedEl) feedEl.textContent = FEED_NAMES[state.symbol] || 'MARKET';
+}
+
 // UI Event Handlers
 function setupEventListeners() {
+  updateWatermark();
   const offsetDisplay = document.getElementById('offset-display');
   const updateOffsetDisplay = () => {
     if (offsetDisplay) {
@@ -1638,7 +1660,7 @@ function setupEventListeners() {
   // Pair Selector
   document.getElementById('pair-selector').addEventListener('change', (e) => {
     state.symbol = e.target.value;
-    document.getElementById('wm-symbol-name').textContent = state.symbol === 'XAUUSD' ? 'XAUUSD · OANDA' : e.target.options[e.target.selectedIndex].text;
+    updateWatermark();
     const saved = localStorage.getItem(`offset_${state.symbol}`);
     state.offset = saved !== null ? parseFloat(saved) : (state.symbol === 'XAUUSD' ? 8.5 : 0.0);
     updateOffsetDisplay();
@@ -1654,7 +1676,7 @@ function setupEventListeners() {
       btn.classList.add('active');
       state.timeframe = btn.dataset.tf;
       applyTimeframeSettings(state.timeframe);
-      document.getElementById('wm-timeframe').textContent = state.timeframe;
+      updateWatermark();
 
       const isScalp = ['1m', '5m'].includes(state.timeframe);
       document.getElementById('trading-mode-label').textContent = isScalp 
