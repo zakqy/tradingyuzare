@@ -64,6 +64,9 @@ const state = {
     completed_trades: 0,
   },
   offset: parseFloat(localStorage.getItem('offset_XAUUSD') || '8.5'),
+  nasMultiplier: 41.047,
+  lastRawQqq: 687.5,
+  tvNasPrice: 28224.4,
   sl_pips: activeTFConf.sl_pips || 30,
   tp_targets: [...activeTFConf.tp_targets],
   tp1_pips: activeTFConf.tp_targets[0] || 30,
@@ -599,7 +602,7 @@ async function syncTradingViewOandaPrice() {
     try {
       const resp = await fetch('https://scanner.tradingview.com/cfd/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           symbols: { tickers: ['OANDA:XAUUSD'] },
           columns: ['close', 'open', 'high', 'low', 'change']
@@ -629,7 +632,7 @@ async function syncTradingViewOandaPrice() {
     try {
       const resp = await fetch('https://scanner.tradingview.com/global/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           symbols: { tickers: ['COINW:NAS100USDT.P'] },
           columns: ['close', 'bid', 'ask']
@@ -642,6 +645,9 @@ async function syncTradingViewOandaPrice() {
           const tvClose = parseFloat(tvData[0]);
           if (tvClose > 10000) {
             state.tvNasPrice = tvClose;
+            if (state.lastRawQqq && state.lastRawQqq > 100) {
+              state.nasMultiplier = tvClose / state.lastRawQqq;
+            }
             const sellEl = document.getElementById('quote-sell-price');
             const buyEl = document.getElementById('quote-buy-price');
             const spreadEl = document.getElementById('spread-val');
@@ -732,12 +738,13 @@ async function loadMarketData() {
       const raw = await fetchBinanceKlinesClient(binanceSym, state.timeframe, targetLimit);
 
       const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
-      let multiplier = 1.0;
-      if (isNas && state.tvNasPrice && raw.length > 0) {
-        const lastRaw = parseFloat(raw[raw.length - 1][4]);
-        if (lastRaw > 100 && lastRaw < 2000) {
-          multiplier = state.tvNasPrice / lastRaw;
-        }
+      if (raw.length > 0) {
+        state.lastRawQqq = parseFloat(raw[raw.length - 1][4]);
+      }
+      let multiplier = isNas ? (state.nasMultiplier || 41.047) : 1.0;
+      if (isNas && state.tvNasPrice && state.lastRawQqq > 100) {
+        multiplier = state.tvNasPrice / state.lastRawQqq;
+        state.nasMultiplier = multiplier;
       }
 
       // Auto-calibrate offset to match TradingView OANDA XAUUSD exactly
@@ -1568,25 +1575,33 @@ function startWebSocket() {
       if (raw.stream) {
         const stream = raw.stream;
         const d = raw.data;
+        const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
+        const mult = isNas ? (state.nasMultiplier || 41.047) : 1.0;
+        const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
+        const digits = isForex ? 4 : (isNas ? 1 : 2);
 
         // 1. Instant Trade Execution Tick (0ms latency, exactly like MT5 ticks!)
         if (stream.includes('aggTrade')) {
-          const tradePrice = Math.round((parseFloat(d.p) + offset) * 100) / 100;
+          const rawP = parseFloat(d.p);
+          if (isNas) state.lastRawQqq = rawP;
+          const tradePrice = Math.round(((rawP * mult) + offset) * (10 ** digits)) / (10 ** digits);
           applyPriceTick(tradePrice);
         }
         // 2. Real-Time Bid/Ask Order Book Updates (Instant Spread & Market Watch!)
         else if (stream.includes('bookTicker')) {
-          const bid = Math.round((parseFloat(d.b) + offset) * 100) / 100;
-          const ask = Math.round((parseFloat(d.a) + offset) * 100) / 100;
-          const spread = Math.round((ask - bid) * 100) / 100;
-          const digits = (state.symbol === 'EURUSD' || state.symbol === 'GBPUSD') ? 4 : (['NAS100USD', 'USA100'].includes(state.symbol) ? 1 : 2);
+          const rawB = parseFloat(d.b);
+          const rawA = parseFloat(d.a);
+          if (isNas) state.lastRawQqq = rawB;
+          const bid = Math.round(((rawB * mult) + offset) * (10 ** digits)) / (10 ** digits);
+          const ask = Math.round(((rawA * mult) + offset) * (10 ** digits)) / (10 ** digits);
+          const spread = isNas ? 2.3 : Math.round((ask - bid) * (10 ** digits)) / (10 ** digits);
 
           const sellEl = document.getElementById('quote-sell-price');
           const buyEl = document.getElementById('quote-buy-price');
           const spreadEl = document.getElementById('spread-val');
           if (sellEl) sellEl.textContent = bid.toFixed(digits);
-          if (buyEl) buyEl.textContent = ask.toFixed(digits);
-          if (spreadEl) spreadEl.textContent = spread.toFixed(2);
+          if (buyEl) buyEl.textContent = (isNas ? (bid + 2.3) : ask).toFixed(digits);
+          if (spreadEl) spreadEl.textContent = isNas ? '2.3' : spread.toFixed(isForex ? 4 : 2);
 
           applyPriceTick(bid);
         }
@@ -1595,10 +1610,10 @@ function startWebSocket() {
           const k = d.k;
           updateActiveCandle(
             Math.floor(k.t / 1000),
-            Math.round((parseFloat(k.o) + offset) * 100) / 100,
-            Math.round((parseFloat(k.h) + offset) * 100) / 100,
-            Math.round((parseFloat(k.l) + offset) * 100) / 100,
-            Math.round((parseFloat(k.c) + offset) * 100) / 100
+            Math.round(((parseFloat(k.o) * mult) + offset) * (10 ** digits)) / (10 ** digits),
+            Math.round(((parseFloat(k.h) * mult) + offset) * (10 ** digits)) / (10 ** digits),
+            Math.round(((parseFloat(k.l) * mult) + offset) * (10 ** digits)) / (10 ** digits),
+            Math.round(((parseFloat(k.c) * mult) + offset) * (10 ** digits)) / (10 ** digits)
           );
           if (k.x) {
             sounds.playPendingAlert();
@@ -1662,8 +1677,13 @@ function startTickerHeartbeat() {
           const resp = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSym}`);
           if (resp.ok) {
             const d = await resp.json();
+            const isNas = ['NAS100USD', 'USA100'].includes(state.symbol);
+            const mult = isNas ? (state.nasMultiplier || 41.047) : 1.0;
+            const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
+            const digits = isForex ? 4 : (isNas ? 1 : 2);
             const offset = state.symbol === 'XAUUSD' ? state.offset : 0.0;
-            applyPriceTick(Math.round((parseFloat(d.price) + offset) * 100) / 100);
+            const price = Math.round(((parseFloat(d.price) * mult) + offset) * (10 ** digits)) / (10 ** digits);
+            applyPriceTick(price);
           }
         }
       } catch (e) {}
@@ -1755,6 +1775,7 @@ function setupEventListeners() {
   // Pair Selector
   document.getElementById('pair-selector').addEventListener('change', (e) => {
     state.symbol = e.target.value;
+    if (state.symbol === 'USA100') state.symbol = 'NAS100USD';
     updateWatermark();
     if (state.candleSeries) {
       const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
