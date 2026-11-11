@@ -1878,16 +1878,18 @@ function updateWatermark() {
   if (feedEl) feedEl.textContent = FEED_NAMES[state.symbol] || 'MARKET';
 }
 
+// Offset Display Updater
+function updateOffsetDisplay() {
+  const offsetDisplay = document.getElementById('offset-display');
+  if (offsetDisplay) {
+    const sign = state.offset >= 0 ? '+' : '';
+    offsetDisplay.textContent = `${sign}${state.offset.toFixed(2)}`;
+  }
+}
+
 // UI Event Handlers
 function setupEventListeners() {
   updateWatermark();
-  const offsetDisplay = document.getElementById('offset-display');
-  const updateOffsetDisplay = () => {
-    if (offsetDisplay) {
-      const sign = state.offset >= 0 ? '+' : '';
-      offsetDisplay.textContent = `${sign}${state.offset.toFixed(2)}`;
-    }
-  };
   updateOffsetDisplay();
 
   const applyNewOffset = async (newOffset) => {
