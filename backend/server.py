@@ -56,25 +56,37 @@ broker_offsets: Dict[str, float] = {k: v.get("default_offset", 0.0) for k, v in 
 def fetch_binance_klines(symbol: str, interval: str, limit: int = 300, offset: float = 0.0) -> List[Dict[str, Any]]:
     """Fetch candlestick data from Binance Vision API dengan kalibrasi offset MT5"""
     binance_symbol = PAIR_MAP.get(symbol, {}).get("binance", "PAXGUSDT")
-    url = f"https://data-api.binance.vision/api/v3/klines?symbol={binance_symbol}&interval={interval}&limit={limit}"
+    fetch_limit = limit + 80 if interval == "1m" else limit
+    url = f"https://data-api.binance.vision/api/v3/klines?symbol={binance_symbol}&interval={interval}&limit={fetch_limit}"
     
     try:
         resp = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code == 200:
             raw = resp.json()
             candles = []
-            for item in raw:
+            total_items = len(raw)
+            for idx, item in enumerate(raw):
                 # [open_time, open, high, low, close, volume, close_time, ...]
                 t = int(item[0] // 1000) # seconds for Lightweight Charts
+                o = round(float(item[1]) + offset, 2)
+                h = round(float(item[2]) + offset, 2)
+                l = round(float(item[3]) + offset, 2)
+                c = round(float(item[4]) + offset, 2)
+                v = float(item[5])
+
+                # Hilangkan bar dummy datar (high == low / 0 movement) pada 1m agar chart mulus seperti MT5
+                if interval == "1m" and idx < total_items - 1 and h <= l:
+                    continue
+
                 candles.append({
                     "time": t,
-                    "open": round(float(item[1]) + offset, 2),
-                    "high": round(float(item[2]) + offset, 2),
-                    "low": round(float(item[3]) + offset, 2),
-                    "close": round(float(item[4]) + offset, 2),
-                    "volume": float(item[5])
+                    "open": o,
+                    "high": h,
+                    "low": l,
+                    "close": c,
+                    "volume": v
                 })
-            return candles
+            return candles[-limit:]
         else:
             logger.warning(f"Binance Vision returned status {resp.status_code}")
     except Exception as e:

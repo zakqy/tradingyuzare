@@ -612,11 +612,12 @@ async function loadMarketData() {
     // Direct Binance Vision API fallback for GitHub Pages!
     if (!data) {
       const binanceSym = PAIR_MAP[state.symbol] || 'PAXGUSDT';
-      const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${state.timeframe}&limit=250`;
+      const klineLimit = state.timeframe === '1m' ? 350 : 250;
+      const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${state.timeframe}&limit=${klineLimit}`;
       const resp = await fetch(klineUrl);
       const raw = await resp.json();
       const offset = state.symbol === 'XAUUSD' ? state.offset : 0.0;
-      const rawCandles = raw.map(x => ({
+      let rawCandles = raw.map(x => ({
         time: Math.floor(x[0] / 1000),
         open: Math.round((parseFloat(x[1]) + offset) * 100) / 100,
         high: Math.round((parseFloat(x[2]) + offset) * 100) / 100,
@@ -624,7 +625,14 @@ async function loadMarketData() {
         close: Math.round((parseFloat(x[4]) + offset) * 100) / 100,
         volume: parseFloat(x[5]),
       }));
-      data = computeClientSideIndicators(rawCandles);
+
+      // Filter bar dummy datar (high <= low) yang bikin garis '---' pada M1 agar bersih seperti MT5
+      if (state.timeframe === '1m') {
+        const lastIdx = rawCandles.length - 1;
+        rawCandles = rawCandles.filter((c, idx) => idx === lastIdx || c.high > c.low);
+      }
+
+      data = computeClientSideIndicators(rawCandles, state.timeframe);
     }
 
     state.candles = data.candles;
@@ -702,11 +710,12 @@ async function loadAllTimeframeStats(force = false) {
           return;
         }
         try {
-          const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${tf}&limit=250`;
+          const klineLimit = tf === '1m' ? 350 : 250;
+          const klineUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSym}&interval=${tf}&limit=${klineLimit}`;
           const resp = await fetch(klineUrl);
           if (!resp.ok) return;
           const raw = await resp.json();
-          const rawCandles = raw.map(x => ({
+          let rawCandles = raw.map(x => ({
             time: Math.floor(x[0] / 1000),
             open: Math.round((parseFloat(x[1]) + offset) * 100) / 100,
             high: Math.round((parseFloat(x[2]) + offset) * 100) / 100,
@@ -714,6 +723,10 @@ async function loadAllTimeframeStats(force = false) {
             close: Math.round((parseFloat(x[4]) + offset) * 100) / 100,
             volume: parseFloat(x[5]),
           }));
+          if (tf === '1m') {
+            const lastIdx = rawCandles.length - 1;
+            rawCandles = rawCandles.filter((c, idx) => idx === lastIdx || c.high > c.low);
+          }
           const analyzed = computeClientSideIndicators(rawCandles, tf);
           if (analyzed && analyzed.stats) {
             state.all_tf_stats[tf] = analyzed.stats;
@@ -1138,11 +1151,17 @@ function renderStatsDisplay() {
 function updateActiveCandle(time, open, high, low, close) {
   state.lastTickTime = Date.now();
   state.lastPrice = close;
+  let finalHigh = high;
+  let finalLow = low;
+  if (finalHigh <= finalLow) {
+    finalHigh = Math.round((close + 0.05) * 100) / 100;
+    finalLow = Math.round((close - 0.05) * 100) / 100;
+  }
   const candleUpdate = {
     time: time,
     open: open,
-    high: high,
-    low: low,
+    high: finalHigh,
+    low: finalLow,
     close: close,
     color: close >= open ? '#00c853' : '#f23645',
   };
@@ -1161,6 +1180,10 @@ function applyPriceTick(price) {
     state.lastCandle.close = price;
     if (price > state.lastCandle.high) state.lastCandle.high = price;
     if (price < state.lastCandle.low) state.lastCandle.low = price;
+    if (state.lastCandle.high <= state.lastCandle.low) {
+      state.lastCandle.high = Math.round((price + 0.05) * 100) / 100;
+      state.lastCandle.low = Math.round((price - 0.05) * 100) / 100;
+    }
     state.lastCandle.color = state.lastCandle.close >= state.lastCandle.open ? '#00c853' : '#f23645';
     state.candleSeries.update(state.lastCandle);
     updateOHLC(state.lastCandle);
