@@ -163,8 +163,9 @@ async def async_fetch_tv_klines(symbol: str = "OANDA:XAUUSD", interval: str = "1
 
             for _ in range(20):
                 raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                if "timescale_update" in raw:
-                    parts = raw.split("~m~")
+                raw_str = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+                if "timescale_update" in raw_str:
+                    parts = raw_str.split("~m~")
                     for p in parts:
                         if p.startswith("{"):
                             d = json.loads(p)
@@ -204,7 +205,7 @@ def fetch_market_klines(symbol: str, interval: str, limit: int = 2500, offset: f
     if tv_symbol:
         tv_candles = fetch_tradingview_klines(tv_symbol, interval, limit)
         if tv_candles and len(tv_candles) >= 20:
-            digits = pair_cfg.get("digits", 2)
+            digits: int = int(pair_cfg.get("digits", 2))
             if offset != 0.0:
                 for c in tv_candles:
                     c["open"] = round(c["open"] + offset, digits)
@@ -466,8 +467,8 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         nonlocal running
         tf_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D", "1w": "W"}
         res_itv = tf_map.get(timeframe, "1")
-        tv_sym = PAIR_MAP.get(symbol, {}).get("tv_symbol", "OANDA:XAUUSD")
-        digits = PAIR_MAP.get(symbol, {}).get("digits", 2)
+        tv_sym = str(PAIR_MAP.get(symbol, {}).get("tv_symbol", "OANDA:XAUUSD"))
+        digits: int = int(PAIR_MAP.get(symbol, {}).get("digits", 2))
         uri = "wss://data.tradingview.com/socket.io/websocket"
         headers = {"Origin": "https://www.tradingview.com", "User-Agent": "Mozilla/5.0"}
         while running:
@@ -482,9 +483,10 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
                     await tws.send(construct_tv_msg("create_series", [cs, "sds_1", "s1", "sds_sym_1", res_itv, 10]))
                     while running:
                         msg = await tws.recv()
-                        cur_offset = broker_offsets.get(symbol, 0.0)
-                        if "du" in msg or "timescale_update" in msg:
-                            parts = msg.split("~m~")
+                        msg_str: str = msg.decode("utf-8", errors="ignore") if isinstance(msg, bytes) else str(msg)
+                        cur_offset: float = float(broker_offsets.get(symbol, 0.0))
+                        if "du" in msg_str or "timescale_update" in msg_str:
+                            parts = msg_str.split("~m~")
                             for p in parts:
                                 if p.startswith("{"):
                                     d = json.loads(p)
