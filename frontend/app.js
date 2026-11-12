@@ -2193,9 +2193,16 @@ function showToast(msg, icon = '🔔') {
 // AUTHENTICATION & ACCESS CONTROL SYSTEM
 // ==========================================================
 const AUTH_USERS = [
-  { username: 'zakzakqy', password: 'Savior,123', name: 'zakzakqy' },
-  { username: 'piterxzakqy', password: 'piterxzakqy123', name: 'piterxzakqy' }
+  { username: 'zakzakqy', passwords: ['Savior,123', 'Savior.123', 'Savior123'], password: 'Savior,123', name: 'zakzakqy' },
+  { username: 'piterxzakqy', passwords: ['piterxzakqy123'], password: 'piterxzakqy123', name: 'piterxzakqy' }
 ];
+
+function checkCredentialsMatch(u, rawUser, rawPass) {
+  if (u.username.toLowerCase() !== rawUser.toLowerCase()) return false;
+  if (u.password === rawPass) return true;
+  if (Array.isArray(u.passwords) && u.passwords.includes(rawPass)) return true;
+  return false;
+}
 
 let isTerminalInitialized = false;
 
@@ -2303,10 +2310,55 @@ function initAuth() {
 
   // Check Existing Session
   const currentUser = getLoggedUser();
+
+  // Read URL Query Parameters for Auto-Fill / Auto-Login
+  let urlParams = null;
+  let qUser = null;
+  let qPass = null;
+  try {
+    urlParams = new URLSearchParams(window.location.search);
+    qUser = urlParams.get('username') || urlParams.get('user');
+    qPass = urlParams.get('password') || urlParams.get('pass');
+  } catch (e) {}
+
+  if (qUser && usernameInput) {
+    usernameInput.value = qUser.trim();
+  }
+  if (qPass && passwordInput) {
+    passwordInput.value = qPass.trim();
+  }
+
   if (currentUser && currentUser.username) {
     if (gate) gate.classList.add('hidden');
     updateAuthUI(currentUser);
     startTerminal();
+  } else if (qUser && qPass) {
+    // Auto-login via URL parameters
+    const rawUser = qUser.trim();
+    const rawPass = qPass.trim();
+    const matched = AUTH_USERS.find(u => checkCredentialsMatch(u, rawUser, rawPass));
+
+    if (matched) {
+      const userObj = {
+        username: matched.username,
+        name: matched.name,
+        loginTime: Date.now()
+      };
+      setLoggedUser(userObj, true);
+      if (gate) gate.classList.add('hidden');
+      updateAuthUI(userObj);
+      startTerminal();
+      showToast(`Selamat datang, ${matched.name}! 🚀`, '✅');
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (e) {}
+    } else {
+      if (gate) gate.classList.remove('hidden');
+      if (errorEl && errorText) {
+        errorText.textContent = 'Username atau password salah!';
+        errorEl.style.display = 'flex';
+      }
+    }
   } else {
     if (gate) gate.classList.remove('hidden');
     setTimeout(() => {
@@ -2330,9 +2382,7 @@ function initAuth() {
       }
 
       // Check against credentials (case-insensitive for username, exact match for password)
-      const matched = AUTH_USERS.find(
-        u => u.username.toLowerCase() === rawUser.toLowerCase() && u.password === rawPass
-      );
+      const matched = AUTH_USERS.find(u => checkCredentialsMatch(u, rawUser, rawPass));
 
       if (matched) {
         if (errorEl) errorEl.style.display = 'none';
