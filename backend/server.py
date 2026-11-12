@@ -598,8 +598,8 @@ async def websocket_live_stream(websocket: WebSocket, symbol: str, timeframe: st
         manager.disconnect(websocket)
 
 AUTH_USERS = {
-    "zakzakqy": ["Savior,123", "Savior.123", "Savior123"],
-    "piterxzakqy": ["piterxzakqy123"],
+    "zakzakqy": "Savior,123",
+    "piterxzakqy": "piterxzakqy123",
 }
 
 @app.post("/api/auth/login")
@@ -607,11 +607,7 @@ async def api_auth_login(payload: Dict[str, Any]):
     username = str(payload.get("username", "")).strip().lower()
     password = str(payload.get("password", "")).strip()
     
-    valid_passwords = AUTH_USERS.get(username)
-    if isinstance(valid_passwords, str):
-        valid_passwords = [valid_passwords]
-    
-    if valid_passwords and password in valid_passwords:
+    if username in AUTH_USERS and AUTH_USERS[username] == password:
         return JSONResponse(status_code=200, content={
             "status": "ok",
             "username": username,
