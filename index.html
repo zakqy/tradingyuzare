@@ -103,19 +103,16 @@
 
     <div class="feature-pills">
       <div class="pill-feature active">
-        <span>✓</span> 01 Pending Zone
+        <span>✓</span> 01 Dual Signal
       </div>
       <div class="pill-feature active">
-        <span>✓</span> 02 Dual Signal
+        <span>✓</span> 02 TP1-3 & SL Auto
       </div>
       <div class="pill-feature active">
-        <span>✓</span> 03 TP1-3 & SL Auto
+        <span>✓</span> 03 Zero Repaint (Bar Close)
       </div>
       <div class="pill-feature active">
-        <span>✓</span> 04 Zero Repaint (Bar Close)
-      </div>
-      <div class="pill-feature active">
-        <span>✓</span> 05 Multi-TF (1m - Weekly)
+        <span>✓</span> 04 Multi-TF (1m - Weekly)
       </div>
     </div>
   </div>
@@ -144,9 +141,6 @@
 
       <!-- Overlaid Signal Badges (TradingView Style: buy / sell) -->
       <div id="signals-overlay"></div>
-
-      <!-- Overlaid Pending Zone Badges in Future Chart Area -->
-      <div id="pending-zones-overlay"></div>
     </div>
 
     <!-- Sidebar: Dual Signal & Trade Management -->
@@ -237,19 +231,6 @@
               <span id="sell-sl-val">--</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Pending Zones Monitor -->
-      <div class="sidebar-card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>🎯</span> PENDING ZONES MONITOR
-          </div>
-          <span style="font-size: 11px; color: var(--bull-cyan);" id="pending-count-label">0 Level</span>
-        </div>
-        <div id="pending-zones-list" style="display: flex; flex-direction: column; gap: 6px; font-size: 11px;">
-          <!-- Populated by JS -->
         </div>
       </div>
 
@@ -365,10 +346,6 @@
           <div id="tp-inputs-container" style="display: flex; flex-direction: column; gap: 10px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
             <!-- Rendered dynamically by JavaScript -->
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-            <label>Pending Zones Lookback:</label>
-            <input type="number" id="inp-pz-lookback" value="7" min="3" max="20" style="width: 70px; padding: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
-          </div>
           <div style="margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
             <div>
               <div style="font-weight: 600; color: #fff; font-size: 12px;">Akun Sesi:</div>
@@ -399,10 +376,6 @@
     <button class="mobile-nav-btn" data-tab="signals" id="nav-btn-signals">
       <span class="nav-icon">⚡</span>
       <span class="nav-label">Sinyal</span>
-    </button>
-    <button class="mobile-nav-btn" data-tab="pending" id="nav-btn-pending">
-      <span class="nav-icon">🎯</span>
-      <span class="nav-label">Pending</span>
     </button>
     <button class="mobile-nav-btn" data-tab="stats" id="nav-btn-stats">
       <span class="nav-icon">📊</span>
@@ -485,7 +458,7 @@
 
   <!-- Scripts -->
   <script src="./lightweight-charts.standalone.production.js"></script>
-  <script src="./app.js?v=2.8.6"></script>
+  <script src="./app.js?v=2.9.0"></script>
 </body>
 </html>
 

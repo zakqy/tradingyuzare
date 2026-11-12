@@ -162,83 +162,10 @@ class YUZARE_Engine:
                 "color": color
             })
 
-        # 2. Identify Pending Zones (Forward-projected Support & Resistance / Order Blocks)
+        # 2. Tanpa Pending Zones (Langsung sinyal eksekusi BUY & SELL)
         pending_zones = []
-        swing_highs = []
-        swing_lows = []
-
-        lookback = self.swing_lookback
-        for i in range(lookback, n - lookback):
-            # Swing High (Resistance)
-            is_sh = all(highs[i] >= highs[i - k] and highs[i] >= highs[i + k] for k in range(1, lookback + 1))
-            if is_sh:
-                swing_highs.append({
-                    "index": i,
-                    "time": times[i],
-                    "price": highs[i],
-                    "zone_bound": min(opens[i], closes[i]),
-                    "type": "pending_sell"
-                })
-
-            # Swing Low (Support)
-            is_sl = all(lows[i] <= lows[i - k] and lows[i] <= lows[i + k] for k in range(1, lookback + 1))
-            if is_sl:
-                swing_lows.append({
-                    "index": i,
-                    "time": times[i],
-                    "price": lows[i],
-                    "zone_bound": max(opens[i], closes[i]),
-                    "type": "pending_buy"
-                })
-
         current_price = closes[-1]
         pip_unit = kwargs.get("pip_unit", (0.1 if current_price > 200 else 0.0001))
-
-        # Hanya ambil Pending Zones yang belum pernah tersentuh / tertembus oleh candle setelahnya
-        untouched_sh = []
-        for sh in swing_highs:
-            if sh["price"] <= current_price:
-                continue
-            idx = sh["index"]
-            penetrated = any(highs[k] >= sh["price"] for k in range(idx + 1, n))
-            if not penetrated:
-                untouched_sh.append(sh)
-
-        untouched_sl = []
-        for sl in swing_lows:
-            if sl["price"] >= current_price:
-                continue
-            idx = sl["index"]
-            penetrated = any(lows[k] <= sl["price"] for k in range(idx + 1, n))
-            if not penetrated:
-                untouched_sl.append(sl)
-
-        recent_sh = sorted(untouched_sh, key=lambda x: x["price"])[:2]
-        recent_sl = sorted(untouched_sl, key=lambda x: x["price"], reverse=True)[:2]
-
-        for sh in recent_sh:
-            pending_zones.append({
-                "id": f"ps_{sh['index']}",
-                "type": "pending_sell",
-                "label": "SELL LIMIT",
-                "price": round(sh["price"], 2),
-                "zone_low": round(sh["zone_bound"], 2),
-                "zone_high": round(sh["price"], 2),
-                "distance": round(sh["price"] - current_price, 2),
-                "distance_pips": round((sh["price"] - current_price) / pip_unit, 1)
-            })
-
-        for sl in recent_sl:
-            pending_zones.append({
-                "id": f"pb_{sl['index']}",
-                "type": "pending_buy",
-                "label": "BUY LIMIT",
-                "price": round(sl["price"], 2),
-                "zone_low": round(sl["price"], 2),
-                "zone_high": round(sl["zone_bound"], 2),
-                "distance": round(current_price - sl["price"], 2),
-                "distance_pips": round((current_price - sl["price"]) / pip_unit, 1)
-            })
 
         # 3. Dual Signal Generation (Zero Repaint - Bar Close Evaluated)
         signals = []

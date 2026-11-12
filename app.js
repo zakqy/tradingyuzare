@@ -377,61 +377,8 @@ function computeClientSideIndicators(candles, tf = state.timeframe) {
     color: c.close >= c.open ? (trend[i] === 1 ? '#00c853' : '#089981') : (trend[i] === -1 ? '#f23645' : '#d50000'),
   }));
 
-  // Pending Zones (Hanya ambil level yang belum pernah tersentuh/tertembus)
+  // Tanpa Pending Zones (Hanya sinyal direct BUY & SELL)
   const pending_zones = [];
-  const curPrice = closes[n - 1];
-  const lookback = state.pz_lookback || 7;
-
-  const raw_sh = [];
-  const raw_sl = [];
-
-  for (let i = lookback; i < n - lookback; i++) {
-    let isSH = true, isSL = true;
-    for (let k = 1; k <= lookback; k++) {
-      if (highs[i] < highs[i - k] || highs[i] < highs[i + k]) isSH = false;
-      if (lows[i] > lows[i - k] || lows[i] > lows[i + k]) isSL = false;
-    }
-    if (isSH && highs[i] > curPrice) {
-      // Periksa apakah candle setelah i pernah menembus highs[i]
-      let penetrated = false;
-      for (let m = i + 1; m < n; m++) {
-        if (highs[m] >= highs[i]) { penetrated = true; break; }
-      }
-      if (!penetrated) raw_sh.push({ index: i, price: highs[i] });
-    }
-    if (isSL && lows[i] < curPrice) {
-      // Periksa apakah candle setelah i pernah menembus lows[i]
-      let penetrated = false;
-      for (let m = i + 1; m < n; m++) {
-        if (lows[m] <= lows[i]) { penetrated = true; break; }
-      }
-      if (!penetrated) raw_sl.push({ index: i, price: lows[i] });
-    }
-  }
-
-  // Ambil maksimal 2 level terdekat agar chart tetap bersih
-  raw_sh.sort((a, b) => a.price - b.price);
-  raw_sl.sort((a, b) => b.price - a.price);
-
-  raw_sh.slice(0, 2).forEach(sh => {
-    pending_zones.push({
-      id: `ps_${sh.index}`,
-      type: 'pending_sell',
-      label: 'SELL LIMIT',
-      price: Math.round(sh.price * 100) / 100,
-      distance_pips: Math.round((sh.price - curPrice) * 10),
-    });
-  });
-
-  raw_sl.slice(0, 2).forEach(sl => {
-    pending_zones.push({
-      id: `pb_${sl.index}`,
-      type: 'pending_buy',
-      label: 'BUY LIMIT',
-      price: Math.round(sl.price * 100) / 100,
-      distance_pips: Math.round((curPrice - sl.price) * 10),
-    });
-  });
 
   // Signals
   const signals = [];
@@ -1024,97 +971,17 @@ function applyMarkers(signals) {
   renderSignalBadges();
 }
 
-// Pending Zones Overlay & Price Lines (Garis BUY LIMIT & SELL LIMIT pada Chart & Axis Harga)
+// Pending Zones Overlay & Price Lines (Dibersihkan sepenuhnya - mode sinyal direct)
 function renderPendingZonesOverlay() {
   const overlay = document.getElementById('pending-zones-overlay');
-  if (!state.candleSeries) return;
   if (overlay) overlay.innerHTML = '';
-
-  // 1. Bersihkan semua garis pending lama
-  if (state.pendingPriceLines) {
+  if (state.pendingPriceLines && state.candleSeries) {
     state.pendingPriceLines.forEach(line => {
       try { state.candleSeries.removePriceLine(line); } catch (e) {}
     });
   }
   state.pendingPriceLines = [];
-
-  const curPrice = state.lastPrice || (state.candles.length > 0 ? state.candles[state.candles.length - 1].close : 0);
-
-  // Sanity check: buang pending zone dari aset lain yang selisih harganya > 40%
-  const validZonesPool = (state.pendingZones || []).filter(z => {
-    if (!curPrice || curPrice <= 0) return true;
-    return Math.abs(z.price - curPrice) < curPrice * 0.4;
-  });
-
-  if (validZonesPool.length === 0) {
-    const pzList = document.getElementById('pending-zones-list');
-    if (pzList) pzList.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 10px;">Semua level pending telah tersentuh / selesai.</div>';
-    const countLabel = document.getElementById('pending-count-label');
-    if (countLabel) countLabel.textContent = '0 Level Aktif';
-    return;
-  }
-
-  // 2. Filter: Hilangkan jika harga saat ini sudah mencapai/menyentuh pending level (Hit SELL LIMIT / BUY LIMIT)
-  const activeSellLimits = validZonesPool
-    .filter(z => z.type === 'pending_sell' && curPrice < z.price)
-    .sort((a, b) => a.price - b.price)
-    .slice(0, 2);
-
-  const activeBuyLimits = validZonesPool
-    .filter(z => z.type === 'pending_buy' && curPrice > z.price)
-    .sort((a, b) => b.price - a.price)
-    .slice(0, 2);
-
-  const activeZones = [...activeSellLimits, ...activeBuyLimits];
-
-  // 3. Render garis horizontal dashed dan badge label pada axis harga kanan chart
-  activeZones.forEach(zone => {
-    const isSell = zone.type === 'pending_sell';
-    const color = isSell ? '#ff5252' : '#00c853';
-    const title = isSell ? 'SELL LIMIT' : 'BUY LIMIT';
-
-    try {
-      const pLine = state.candleSeries.createPriceLine({
-        price: zone.price,
-        color: color,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: title,
-      });
-      state.pendingPriceLines.push(pLine);
-    } catch (e) {
-      console.warn('Error creating pending price line:', e);
-    }
-  });
-
-  // 4. Update list pending zones di sidebar
-  const countLabel = document.getElementById('pending-count-label');
-  if (countLabel) countLabel.textContent = `${activeZones.length} Level Aktif`;
-
-  const pzList = document.getElementById('pending-zones-list');
-  if (pzList) {
-    if (activeZones.length === 0) {
-      pzList.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 10px;">Semua level pending telah tersentuh / selesai.</div>';
-    } else {
-      pzList.innerHTML = activeZones.map(z => {
-        const isSell = z.type === 'pending_sell';
-        const color = isSell ? 'var(--sell-red)' : 'var(--buy-green)';
-        const bg = isSell ? 'rgba(213, 0, 0, 0.12)' : 'rgba(0, 200, 83, 0.12)';
-        const badgeText = isSell ? 'SELL LIMIT' : 'BUY LIMIT';
-        const dist = Math.round(Math.abs(z.price - curPrice) * 10);
-        return `
-          <div style="display: flex; justify-content: space-between; align-items: center; background: ${bg}; padding: 6px 8px; border-radius: 4px; border-left: 3px solid ${color}; margin-bottom: 4px;">
-            <div>
-              <span style="font-weight: 700; color: ${color}; font-size: 10px;">${badgeText}</span>
-              <span style="font-family: var(--font-mono); font-weight: 700; margin-left: 6px;">${z.price.toFixed(2)}</span>
-            </div>
-            <span style="color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px;">${dist > 0 ? '+' : ''}${dist} pips</span>
-          </div>
-        `;
-      }).join('');
-    }
-  }
+}
 }
 
 // TP & SL Target Lines (Otomatis menghapus garis yang sudah terkena TP / SL)
@@ -1455,16 +1322,7 @@ function updateSidebarPrice(currentPrice) {
     if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
   }
 
-  // Sanity check: Buang pending zones yang bukan milik harga aset saat ini
-  if (state.pendingZones && state.pendingZones.length > 0) {
-    const validZones = state.pendingZones.filter(z => Math.abs(z.price - currentPrice) < currentPrice * 0.4);
-    if (validZones.length !== state.pendingZones.length) {
-      state.pendingZones = validZones;
-      renderPendingZonesOverlay();
-    }
-  }
-
-  // Real-time Target Hit Check: langsung hapus garis jika sudah hit TP / SL / Pending Limit
+  // Real-time Target Hit Check: langsung hapus garis jika sudah hit TP / SL
   let needsTPSLRedraw = false;
 
   if (state.activeBuy) {
@@ -1598,19 +1456,6 @@ function updateSidebarPrice(currentPrice) {
       });
       const slEl = document.getElementById('sell-target-sl');
       if (slEl) slEl.classList.toggle('hit', !!state.activeSell.sl_hit);
-    }
-  }
-
-  // Real-time Pending Limit Check: langsung hapus badge jika harga sudah menyentuh level
-  if (state.pendingZones && state.pendingZones.length > 0) {
-    const prevCount = state.pendingZones.length;
-    state.pendingZones = state.pendingZones.filter(z => {
-      if (z.type === 'pending_sell' && currentPrice >= z.price) return false;
-      if (z.type === 'pending_buy' && currentPrice <= z.price) return false;
-      return true;
-    });
-    if (state.pendingZones.length !== prevCount) {
-      renderPendingZonesOverlay();
     }
   }
 
@@ -2221,12 +2066,15 @@ function setupEventListeners() {
     // Sync current active tab
     syncModalInputsToWorking(activeModalTF);
 
-    state.pz_lookback = parseInt(document.getElementById('inp-pz-lookback').value) || 7;
+    const elPzInput = document.getElementById('inp-pz-lookback');
+    if (elPzInput) {
+      state.pz_lookback = parseInt(elPzInput.value) || 7;
+      localStorage.setItem('pz_lookback', state.pz_lookback);
+    }
     state.tf_settings = JSON.parse(JSON.stringify(workingTFSettings));
 
     // Save to localStorage
     localStorage.setItem('yuzare_tf_settings', JSON.stringify(state.tf_settings));
-    localStorage.setItem('pz_lookback', state.pz_lookback);
 
     // Apply the settings for the currently active chart timeframe
     applyTimeframeSettings(state.timeframe);
