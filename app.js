@@ -749,9 +749,11 @@ async function loadMarketData() {
   try {
     let data = null;
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+    const isVercel = window.location.hostname.endsWith('vercel.app');
+    const hasBackend = isLocal || isVercel;
     const targetLimit = TF_CANDLE_LIMITS[state.timeframe] || 2000;
 
-    if (isLocal) {
+    if (hasBackend) {
       try {
         const tpStr = (state.tp_targets || []).join(',');
         const url = `/api/analysis?symbol=${state.symbol}&timeframe=${state.timeframe}&limit=${targetLimit}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
@@ -870,7 +872,9 @@ async function loadAllTimeframeStats(force = false) {
 
   try {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-    if (isLocal) {
+    const isVercel = window.location.hostname.endsWith('vercel.app');
+    const hasBackend = isLocal || isVercel;
+    if (hasBackend) {
       try {
         const tpStr = (state.tp_targets || []).join(',');
         const resp = await fetch(`/api/stats/all?symbol=${state.symbol}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}`);
@@ -942,7 +946,9 @@ async function refreshSignalsSilently() {
   const refreshTf = state.timeframe;
   try {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-    if (isLocal) {
+    const isVercel = window.location.hostname.endsWith('vercel.app');
+    const hasBackend = isLocal || isVercel;
+    if (hasBackend) {
       const tpStr = (state.tp_targets || []).join(',');
       const targetLimit = TF_CANDLE_LIMITS[refreshTf] || 2000;
       const url = `/api/analysis?symbol=${refreshSym}&timeframe=${refreshTf}&limit=${targetLimit}&sl_pips=${state.sl_pips}&tp_targets=${tpStr}&tp1_pips=${state.tp1_pips}&tp2_pips=${state.tp2_pips}&tp3_pips=${state.tp3_pips}&tp4_pips=${state.tp4_pips}`;
@@ -1864,7 +1870,9 @@ function startTickerHeartbeat() {
       const pollSymbol = state.symbol;
       try {
         const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-        if (isLocal) {
+        const isVercel = window.location.hostname.endsWith('vercel.app');
+        const hasBackend = isLocal || isVercel;
+        if (hasBackend) {
           const resp = await fetch(`/api/ticker?symbol=${pollSymbol}`);
           if (resp.ok) {
             const d = await resp.json();
