@@ -982,7 +982,6 @@ function renderPendingZonesOverlay() {
   }
   state.pendingPriceLines = [];
 }
-}
 
 // TP & SL Target Lines (Otomatis menghapus garis yang sudah terkena TP / SL)
 function renderTPSLLines() {
@@ -2442,6 +2441,8 @@ function initAuth() {
 }
 
 // App Initialization Gate
-window.addEventListener('DOMContentLoaded', () => {
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAuth);
+} else {
   initAuth();
-});
+}
