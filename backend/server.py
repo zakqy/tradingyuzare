@@ -23,10 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 import websockets
 
-try:
-    from backend.indicators import YUZARE_Engine
-except ImportError:
-    from indicators import YUZARE_Engine
+from backend.indicators import YUZARE_Engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("YUZARE")
