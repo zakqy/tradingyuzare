@@ -1,13 +1,27 @@
 {
-  "functions": {
-    "api/index.py": {
-      "includeFiles": "backend/**,frontend/**,index.html,styles.css,app.js,lightweight-charts.standalone.production.js,YUZARE_Indicator.pine"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "fastapi"
     },
-    "main.py": {
-      "includeFiles": "backend/**,frontend/**,index.html,styles.css,app.js,lightweight-charts.standalone.production.js,YUZARE_Indicator.pine"
+    "backend": {
+      "root": "backend",
+      "framework": "fastapi"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" }
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
+    }
   ]
 }
