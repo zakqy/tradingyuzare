@@ -1086,21 +1086,9 @@ function renderPendingZonesOverlay() {
     } catch (e) {
       console.warn('Error creating pending price line:', e);
     }
-
-    // 4. Floating tag di chart canvas overlay
-    if (overlay) {
-      const yCoord = state.candleSeries.priceToCoordinate(zone.price);
-      if (yCoord !== null && yCoord >= 15 && yCoord <= overlay.clientHeight - 15) {
-        const tag = document.createElement('div');
-        tag.className = `zone-tag ${zone.type.replace('_', '-')}`;
-        tag.style.top = `${yCoord}px`;
-        tag.innerHTML = `<span>${title}</span> <span style="opacity: 0.85; font-size: 10px; font-weight: 600;">${zone.price.toFixed(2)}</span>`;
-        overlay.appendChild(tag);
-      }
-    }
   });
 
-  // 5. Update list pending zones di sidebar
+  // 4. Update list pending zones di sidebar
   const countLabel = document.getElementById('pending-count-label');
   if (countLabel) countLabel.textContent = `${activeZones.length} Level Aktif`;
 
