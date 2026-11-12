@@ -1162,13 +1162,7 @@ function renderTPSLLines() {
   if (state.activeBuy) {
     const b = state.activeBuy;
     const tps = b.tps || [];
-    const anyTpRemaining = tps.length > 0 ? tps.some(t => !t.hit) : (!b.tp1_hit || !b.tp2_hit || !b.tp3_hit || !b.tp4_hit);
-    const hasRemainingLevels = anyTpRemaining || !b.sl_hit;
 
-    if (hasRemainingLevels) {
-      addLine(b.entry, 'BUY Entry', '#90caf9', LightweightCharts.LineStyle.Dotted, 1);
-    }
-    
     if (!b.sl_hit) {
       addLine(b.sl, `BUY SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
@@ -1198,13 +1192,7 @@ function renderTPSLLines() {
   if (state.activeSell) {
     const s = state.activeSell;
     const tps = s.tps || [];
-    const anyTpRemaining = tps.length > 0 ? tps.some(t => !t.hit) : (!s.tp1_hit || !s.tp2_hit || !s.tp3_hit || !s.tp4_hit);
-    const hasRemainingLevels = anyTpRemaining || !s.sl_hit;
 
-    if (hasRemainingLevels) {
-      addLine(s.entry, 'SELL Entry', '#ce93d8', LightweightCharts.LineStyle.Dotted, 1);
-    }
-    
     if (!s.sl_hit) {
       addLine(s.sl, `SELL SL (${state.sl_pips}p)`, '#ff5252', LightweightCharts.LineStyle.Dashed, 1);
     }
