@@ -613,6 +613,12 @@ body {
   border: 1px solid #d50000;
 }
 
+.status-badge.waiting {
+  background-color: rgba(255, 171, 0, 0.15);
+  color: #ffd740;
+  border: 1px solid rgba(255, 171, 0, 0.4);
+}
+
 /* Dual Signal Cards */
 .dual-signal-box {
   background: rgba(0, 0, 0, 0.25);

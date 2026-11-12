@@ -470,8 +470,8 @@ class YUZARE_Engine:
             "active_sell_count": len(active_sell_trades)
         }
 
-        latest_buy = active_buy_trades[-1] if active_buy_trades else (buy_trades[-1] if buy_trades else None)
-        latest_sell = active_sell_trades[-1] if active_sell_trades else (sell_trades[-1] if sell_trades else None)
+        latest_buy = active_buy_trades[-1] if active_buy_trades else None
+        latest_sell = active_sell_trades[-1] if active_sell_trades else None
 
         return {
             "candles": colored_candles,

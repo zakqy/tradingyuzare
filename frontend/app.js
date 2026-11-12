@@ -582,8 +582,8 @@ function computeClientSideIndicators(candles, tf = state.timeframe) {
     candles: colored,
     signals,
     pending_zones,
-    latest_buy: activeBuys.length > 0 ? activeBuys[activeBuys.length - 1] : (buy_trades.length > 0 ? buy_trades[buy_trades.length - 1] : null),
-    latest_sell: activeSells.length > 0 ? activeSells[activeSells.length - 1] : (sell_trades.length > 0 ? sell_trades[sell_trades.length - 1] : null),
+    latest_buy: activeBuys.length > 0 ? activeBuys[activeBuys.length - 1] : null,
+    latest_sell: activeSells.length > 0 ? activeSells[activeSells.length - 1] : null,
     current_price: curPrice,
     stats: {
       total_signals: signals.length,
@@ -778,8 +778,11 @@ async function loadMarketData() {
 
       if (currentSeq !== state.loadSeq || targetSymbol !== state.symbol || targetTf !== state.timeframe) return;
 
-      // Auto-calibrate offset to match TradingView OANDA XAUUSD exactly
-      if (state.symbol === 'XAUUSD' && state.tvOandaPrice && raw.length > 0) {
+      // Gunakan offset tersimpan di localStorage agar harga entry konsisten dan tidak berubah saat refresh
+      const savedOffset = localStorage.getItem('offset_XAUUSD');
+      if (savedOffset !== null && !isNaN(parseFloat(savedOffset))) {
+        state.offset = parseFloat(savedOffset);
+      } else if (state.symbol === 'XAUUSD' && state.tvOandaPrice && raw.length > 0) {
         const lastRaw = parseFloat(raw[raw.length - 1][4]);
         if (lastRaw > 2000) {
           state.offset = Math.round((state.tvOandaPrice - lastRaw) * 100) / 100;
@@ -1271,47 +1274,63 @@ function updateSidebar(data) {
   const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
   const digits = isForex ? 4 : 2;
 
-  if (state.activeBuy) {
+  const isBuyActive = state.activeBuy && !state.activeBuy.is_closed && !state.activeBuy.sl_hit;
+  if (isBuyActive) {
     const b = state.activeBuy;
     if (b.tp1_hit || (b.tps && b.tps.some(x => x.hit))) b._counted_tp = true;
     if (b.sl_hit) b._counted_sl = true;
     const entryEl = document.getElementById('buy-entry-val');
     if (entryEl) entryEl.textContent = b.entry.toFixed(digits);
     const bBadge = document.getElementById('buy-status-badge');
-    if (bBadge) bBadge.textContent = b.status || 'ACTIVE';
+    if (bBadge) {
+      bBadge.textContent = b.status || 'ACTIVE';
+      bBadge.className = 'status-badge active';
+    }
   } else {
+    state.activeBuy = null;
     const entryEl = document.getElementById('buy-entry-val');
-    if (entryEl) entryEl.textContent = '--.--';
+    if (entryEl) entryEl.innerHTML = '<span style="color: var(--text-muted); font-size: 11px; font-weight: 600;">Waiting for next signal...</span>';
     const bBadge = document.getElementById('buy-status-badge');
-    if (bBadge) bBadge.textContent = 'WAITING';
+    if (bBadge) {
+      bBadge.textContent = 'WAITING FOR NEXT SIGNAL';
+      bBadge.className = 'status-badge waiting';
+    }
     const pnlEl = document.getElementById('buy-pnl-val');
-    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
+    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; pnlEl.style.color = 'var(--text-muted)'; }
   }
 
-  if (state.activeSell) {
+  const isSellActive = state.activeSell && !state.activeSell.is_closed && !state.activeSell.sl_hit;
+  if (isSellActive) {
     const s = state.activeSell;
     if (s.tp1_hit || (s.tps && s.tps.some(x => x.hit))) s._counted_tp = true;
     if (s.sl_hit) s._counted_sl = true;
     const entryEl = document.getElementById('sell-entry-val');
     if (entryEl) entryEl.textContent = s.entry.toFixed(digits);
     const sBadge = document.getElementById('sell-status-badge');
-    if (sBadge) sBadge.textContent = s.status || 'ACTIVE';
+    if (sBadge) {
+      sBadge.textContent = s.status || 'ACTIVE';
+      sBadge.className = 'status-badge active';
+    }
   } else {
+    state.activeSell = null;
     const entryEl = document.getElementById('sell-entry-val');
-    if (entryEl) entryEl.textContent = '--.--';
+    if (entryEl) entryEl.innerHTML = '<span style="color: var(--text-muted); font-size: 11px; font-weight: 600;">Waiting for next signal...</span>';
     const sBadge = document.getElementById('sell-status-badge');
-    if (sBadge) sBadge.textContent = 'WAITING';
+    if (sBadge) {
+      sBadge.textContent = 'WAITING FOR NEXT SIGNAL';
+      sBadge.className = 'status-badge waiting';
+    }
     const pnlEl = document.getElementById('sell-pnl-val');
-    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; }
+    if (pnlEl) { pnlEl.textContent = '+0.00 pts'; pnlEl.className = 'live-pnl neutral'; pnlEl.style.color = 'var(--text-muted)'; }
   }
 
   const buyGrid = document.getElementById('buy-target-grid');
   if (buyGrid) {
-    buyGrid.innerHTML = renderTargetGridHTML('BUY', state.activeBuy);
+    buyGrid.innerHTML = renderTargetGridHTML('BUY', isBuyActive ? state.activeBuy : null);
   }
   const sellGrid = document.getElementById('sell-target-grid');
   if (sellGrid) {
-    sellGrid.innerHTML = renderTargetGridHTML('SELL', state.activeSell);
+    sellGrid.innerHTML = renderTargetGridHTML('SELL', isSellActive ? state.activeSell : null);
   }
 
   if (data.stats) {
@@ -1605,7 +1624,10 @@ function updateSidebarPrice(currentPrice) {
   const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
   const digits = isForex ? 4 : 2;
 
-  if (state.activeBuy) {
+  const isBuyActive = state.activeBuy && !state.activeBuy.is_closed && !state.activeBuy.sl_hit;
+  if (isBuyActive) {
+    const buyGrid = document.getElementById('buy-target-grid');
+    if (buyGrid) delete buyGrid.dataset.cleared;
     const pnl = currentPrice - state.activeBuy.entry;
     const pnlEl = document.getElementById('buy-pnl-val');
     if (pnlEl) {
@@ -1613,10 +1635,37 @@ function updateSidebarPrice(currentPrice) {
       pnlEl.style.color = pnl >= 0 ? 'var(--buy-green)' : 'var(--sell-red)';
     }
     const badge = document.getElementById('buy-status-badge');
-    if (badge) badge.textContent = state.activeBuy.status || 'ACTIVE';
+    if (badge) {
+      badge.textContent = state.activeBuy.status || 'ACTIVE';
+      badge.className = 'status-badge active';
+    }
+  } else {
+    state.activeBuy = null;
+    const entryEl = document.getElementById('buy-entry-val');
+    if (entryEl && !entryEl.innerHTML.includes('Waiting')) {
+      entryEl.innerHTML = '<span style="color: var(--text-muted); font-size: 11px; font-weight: 600;">Waiting for next signal...</span>';
+    }
+    const pnlEl = document.getElementById('buy-pnl-val');
+    if (pnlEl) {
+      pnlEl.textContent = '+0.00 pts';
+      pnlEl.style.color = 'var(--text-muted)';
+    }
+    const badge = document.getElementById('buy-status-badge');
+    if (badge) {
+      badge.textContent = 'WAITING FOR NEXT SIGNAL';
+      badge.className = 'status-badge waiting';
+    }
+    const buyGrid = document.getElementById('buy-target-grid');
+    if (buyGrid && !buyGrid.dataset.cleared) {
+      buyGrid.innerHTML = renderTargetGridHTML('BUY', null);
+      buyGrid.dataset.cleared = 'true';
+    }
   }
 
-  if (state.activeSell) {
+  const isSellActive = state.activeSell && !state.activeSell.is_closed && !state.activeSell.sl_hit;
+  if (isSellActive) {
+    const sellGrid = document.getElementById('sell-target-grid');
+    if (sellGrid) delete sellGrid.dataset.cleared;
     const pnl = state.activeSell.entry - currentPrice;
     const pnlEl = document.getElementById('sell-pnl-val');
     if (pnlEl) {
@@ -1624,7 +1673,31 @@ function updateSidebarPrice(currentPrice) {
       pnlEl.style.color = pnl >= 0 ? 'var(--buy-green)' : 'var(--sell-red)';
     }
     const badge = document.getElementById('sell-status-badge');
-    if (badge) badge.textContent = state.activeSell.status || 'ACTIVE';
+    if (badge) {
+      badge.textContent = state.activeSell.status || 'ACTIVE';
+      badge.className = 'status-badge active';
+    }
+  } else {
+    state.activeSell = null;
+    const entryEl = document.getElementById('sell-entry-val');
+    if (entryEl && !entryEl.innerHTML.includes('Waiting')) {
+      entryEl.innerHTML = '<span style="color: var(--text-muted); font-size: 11px; font-weight: 600;">Waiting for next signal...</span>';
+    }
+    const pnlEl = document.getElementById('sell-pnl-val');
+    if (pnlEl) {
+      pnlEl.textContent = '+0.00 pts';
+      pnlEl.style.color = 'var(--text-muted)';
+    }
+    const badge = document.getElementById('sell-status-badge');
+    if (badge) {
+      badge.textContent = 'WAITING FOR NEXT SIGNAL';
+      badge.className = 'status-badge waiting';
+    }
+    const sellGrid = document.getElementById('sell-target-grid');
+    if (sellGrid && !sellGrid.dataset.cleared) {
+      sellGrid.innerHTML = renderTargetGridHTML('SELL', null);
+      sellGrid.dataset.cleared = 'true';
+    }
   }
 }
 
