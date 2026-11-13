@@ -940,14 +940,20 @@ async function loadAllTimeframeStats(force = false) {
   }
 }
 
-// Silent background refresh on bar close
+let isSilentRefreshing = false;
+
+// Silent background refresh on bar close & live signal detection
 async function refreshSignalsSilently() {
+  if (isSilentRefreshing) return;
+  isSilentRefreshing = true;
   const refreshSym = state.symbol;
   const refreshTf = state.timeframe;
+
   try {
     const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
     const isVercel = window.location.hostname.endsWith('vercel.app');
     const hasBackend = isLocal || isVercel;
+
     if (hasBackend) {
       const tpStr = (state.tp_targets || []).join(',');
       const targetLimit = TF_CANDLE_LIMITS[refreshTf] || 2000;
@@ -956,7 +962,15 @@ async function refreshSignalsSilently() {
       if (resp.ok) {
         const data = await resp.json();
         if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
-        state.signals = data.signals || [];
+        if (data.candles && data.candles.length > 0) {
+          state.candles = data.candles;
+        }
+        const prevSignalCount = (state.signals || []).length;
+        const newSignals = data.signals || [];
+        if (newSignals.length > prevSignalCount) {
+          sounds.playPendingAlert();
+        }
+        state.signals = newSignals;
         state.pendingZones = data.pending_zones || [];
         state.activeBuy = data.latest_buy || null;
         state.activeSell = data.latest_sell || null;
@@ -967,19 +981,64 @@ async function refreshSignalsSilently() {
         return;
       }
     }
-    // Client-side refresh
+
+    // Client-side refresh (GitHub Pages / Direct Stream)
     if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
-    const data = computeClientSideIndicators(state.candles);
+
+    // Ambil candle terbaru dari Binance API secara silent di background
+    try {
+      const binanceSym = PAIR_MAP[refreshSym] || 'PAXGUSDT';
+      const recentRaw = await fetchBinanceKlinesClient(binanceSym, refreshTf, 500);
+      if (recentRaw && recentRaw.length > 0 && refreshSym === state.symbol && refreshTf === state.timeframe) {
+        const offset = refreshSym === 'XAUUSD' ? state.offset : 0.0;
+        const isForex = ['EURUSD', 'GBPUSD'].includes(refreshSym);
+        const digits = isForex ? 4 : 2;
+        let freshCandles = recentRaw.map(x => ({
+          time: Math.floor(x[0] / 1000),
+          open: Math.round((parseFloat(x[1]) + offset) * (10 ** digits)) / (10 ** digits),
+          high: Math.round((parseFloat(x[2]) + offset) * (10 ** digits)) / (10 ** digits),
+          low: Math.round((parseFloat(x[3]) + offset) * (10 ** digits)) / (10 ** digits),
+          close: Math.round((parseFloat(x[4]) + offset) * (10 ** digits)) / (10 ** digits),
+          volume: parseFloat(x[5]),
+        }));
+        if (refreshTf === '1m') {
+          const lastIdx = freshCandles.length - 1;
+          freshCandles = freshCandles.filter((c, idx) => idx === lastIdx || c.high > c.low);
+        }
+        if (freshCandles.length > 0) {
+          state.candles = freshCandles;
+          const latestBar = freshCandles[freshCandles.length - 1];
+          if (state.candleSeries && latestBar) {
+            state.candleSeries.update(latestBar);
+          }
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('Silent klines fetch fallback error:', fetchErr);
+    }
+
     if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
-    applyMarkers(data.signals || []);
+    const data = computeClientSideIndicators(state.candles, refreshTf);
+    if (refreshSym !== state.symbol || refreshTf !== state.timeframe) return;
+
+    const prevSignalCount = (state.signals || []).length;
+    const newSignals = data.signals || [];
+    if (newSignals.length > prevSignalCount) {
+      sounds.playPendingAlert();
+    }
+
+    state.signals = newSignals;
     state.pendingZones = data.pending_zones || [];
     state.activeBuy = data.latest_buy || null;
     state.activeSell = data.latest_sell || null;
+    applyMarkers(state.signals);
     renderPendingZonesOverlay();
     renderTPSLLines();
     updateSidebar(data);
   } catch (e) {
     console.warn('Silent refresh error:', e);
+  } finally {
+    isSilentRefreshing = false;
   }
 }
 
@@ -1402,6 +1461,33 @@ function updateActiveCandle(time, open, high, low, close) {
   state.candleSeries.update(candleUpdate);
   updateOHLC(candleUpdate);
   updateSidebarPrice(close);
+
+  // SINKRONISASI REAL-TIME KE state.candles (agar sinyal baru langsung muncul tanpa refresh web!)
+  if (state.candles && state.candles.length > 0) {
+    const lastIdx = state.candles.length - 1;
+    const lastBar = state.candles[lastIdx];
+    if (lastBar.time === time) {
+      lastBar.high = Math.max(lastBar.high, finalHigh);
+      lastBar.low = Math.min(lastBar.low, finalLow);
+      lastBar.close = close;
+      lastBar.color = candleUpdate.color;
+    } else if (time > lastBar.time) {
+      state.candles.push({
+        time: time,
+        open: open,
+        high: finalHigh,
+        low: finalLow,
+        close: close,
+        color: candleUpdate.color,
+        volume: 0
+      });
+      if (state.candles.length > 2500) {
+        state.candles.shift();
+      }
+      renderSignalBadges();
+      refreshSignalsSilently();
+    }
+  }
 }
 
 // MT5-Paced Tick Throttler (250ms cadence - eliminates hyperactive candle twitching)
@@ -1461,6 +1547,15 @@ function applyPriceTick(price) {
     state.lastCandle.color = state.lastCandle.close >= state.lastCandle.open ? '#00c853' : '#f23645';
     if (state.candleSeries) {
       state.candleSeries.update(state.lastCandle);
+    }
+    if (state.candles && state.candles.length > 0) {
+      const lastBar = state.candles[state.candles.length - 1];
+      if (lastBar.time === state.lastCandle.time) {
+        lastBar.high = state.lastCandle.high;
+        lastBar.low = state.lastCandle.low;
+        lastBar.close = state.lastCandle.close;
+        lastBar.color = state.lastCandle.color;
+      }
     }
     updateOHLC(state.lastCandle);
   }
@@ -1889,6 +1984,12 @@ function startTickerHeartbeat() {
   if (state.tickerPollInterval) clearInterval(state.tickerPollInterval);
 
   state.tickerPollInterval = setInterval(async () => {
+    // Background signal sync setiap 15 detik agar sinyal & pending zones selalu terupdate otomatis
+    if (!state.lastSignalCheckTime || Date.now() - state.lastSignalCheckTime > 15000) {
+      state.lastSignalCheckTime = Date.now();
+      refreshSignalsSilently();
+    }
+
     // Jangan poll jika WebSocket aktif & masih menerima tick segar (< 3.5s)
     if (state.ws && state.ws.readyState === WebSocket.OPEN && (Date.now() - state.lastTickTime < 3500)) {
       return;
@@ -1925,7 +2026,7 @@ function startTickerHeartbeat() {
   }, 2000);
 }
 
-// Countdown Timer for Bar Close
+// Countdown Timer for Bar Close & Real-Time Signal Trigger
 function startCountdown() {
   if (state.countdownInterval) clearInterval(state.countdownInterval);
 
@@ -1947,6 +2048,11 @@ function startCountdown() {
     const str = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     const timerEl = document.getElementById('countdown-timer');
     if (timerEl) timerEl.textContent = str;
+
+    // Saat detik penutupan bar (00:00 / 00:01), langsung jalankan deteksi sinyal secara otomatis tanpa perlu refresh web!
+    if (secsLeft === tfSecs || secsLeft === 1) {
+      refreshSignalsSilently();
+    }
   }, 1000);
 }
 
