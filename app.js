@@ -2445,16 +2445,6 @@ function setupEventListeners() {
           const pzEl = document.getElementById('pending-zones-list');
           if (pzEl) pzEl.scrollIntoView({ behavior: 'smooth' });
         }
-      } else if (tab === 'stats') {
-        if (chartWrapper) {
-          chartWrapper.classList.add('mobile-hidden');
-          chartWrapper.style.display = 'none';
-        }
-        if (sidebar) {
-          sidebar.classList.add('mobile-active');
-          const statsEl = document.querySelector('.stats-grid');
-          if (statsEl) statsEl.scrollIntoView({ behavior: 'smooth' });
-        }
       } else if (tab === 'settings') {
         const modal = document.getElementById('modal-settings');
         if (modal) modal.classList.add('active');
