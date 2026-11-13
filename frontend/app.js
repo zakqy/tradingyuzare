@@ -1404,15 +1404,50 @@ function updateActiveCandle(time, open, high, low, close) {
   updateSidebarPrice(close);
 }
 
+// MT5-Paced Tick Throttler (250ms cadence - eliminates hyperactive candle twitching)
+let lastTickProcessTime = 0;
+let pendingTickTimer = null;
+let latestQueuedPrice = null;
+
+function queuePriceTick(price) {
+  if (!price || price <= 0) return;
+  latestQueuedPrice = price;
+  const now = Date.now();
+  const THROTTLE_MS = 250; // Max 4x per detik - ritme natural & stabil seperti terminal MT5
+
+  if (now - lastTickProcessTime >= THROTTLE_MS) {
+    if (pendingTickTimer) {
+      clearTimeout(pendingTickTimer);
+      pendingTickTimer = null;
+    }
+    lastTickProcessTime = now;
+    applyPriceTick(price);
+  } else if (!pendingTickTimer) {
+    pendingTickTimer = setTimeout(() => {
+      pendingTickTimer = null;
+      lastTickProcessTime = Date.now();
+      if (latestQueuedPrice !== null) {
+        applyPriceTick(latestQueuedPrice);
+      }
+    }, THROTTLE_MS - (now - lastTickProcessTime));
+  }
+}
+
 function applyPriceTick(price) {
   if (!price || price <= 0) return;
   state.lastTickTime = Date.now();
   state.lastPrice = price;
 
   if (state.lastCandle) {
-    // Sanity check: Jika harga tick berbeda > 40% dari candle terakhir, abaikan update candle
-    // agar chart tidak melar / squished karena perbedaan harga antar pair (misal XAUUSD vs BTCUSD)
-    if (Math.abs(price - state.lastCandle.close) > state.lastCandle.close * 0.4) {
+    // 1. Anti-Spike Outlier Filter:
+    // Mencegah lonjakan harga instan yang tidak wajar (> $2.50 untuk Gold / 25 pips dalam 1 tick).
+    // Ini mengeliminasi bug spike harga liar yang merusak wick candle dan memicu false SL!
+    const isGold = state.symbol === 'XAUUSD';
+    const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
+    const maxJump = isGold ? 2.50 : (isForex ? 0.0020 : state.lastCandle.close * 0.02);
+
+    if (Math.abs(price - state.lastCandle.close) > maxJump) {
+      console.warn(`[SpikeFilter] Suppressed abnormal spike: ${price} vs current close: ${state.lastCandle.close}`);
       return;
     }
 
@@ -1775,13 +1810,13 @@ function startWebSocket() {
         const isForex = ['EURUSD', 'GBPUSD'].includes(state.symbol);
         const digits = isForex ? 4 : 2;
 
-        // 1. Instant Trade Execution Tick (0ms latency, exactly like MT5 ticks!)
+        // 1. Instant Trade Execution Tick (Throttled to calm MT5 pace)
         if (stream.includes('aggTrade')) {
           const rawP = parseFloat(d.p);
           const tradePrice = Math.round((rawP + offset) * (10 ** digits)) / (10 ** digits);
-          applyPriceTick(tradePrice);
+          queuePriceTick(tradePrice);
         }
-        // 2. Real-Time Bid/Ask Order Book Updates (Instant Spread & Market Watch!)
+        // 2. Real-Time Bid/Ask Order Book Updates (Instant Spread & Quotes)
         else if (stream.includes('bookTicker')) {
           const rawB = parseFloat(d.b);
           const rawA = parseFloat(d.a);
@@ -1796,7 +1831,7 @@ function startWebSocket() {
           if (buyEl) buyEl.textContent = ask.toFixed(digits);
           if (spreadEl) spreadEl.textContent = spread.toFixed(isForex ? 4 : 2);
 
-          applyPriceTick(bid);
+          queuePriceTick(bid);
         }
         // 3. Kline Bar Updates (Bar close zero-repaint event)
         else if (stream.includes('kline')) {
@@ -1828,9 +1863,9 @@ function startWebSocket() {
           if (sellEl && raw.bid) sellEl.textContent = raw.bid.toFixed(digits);
           if (buyEl && raw.ask) buyEl.textContent = raw.ask.toFixed(digits);
           if (spreadEl && raw.spread !== undefined) spreadEl.textContent = raw.spread.toFixed(2);
-          if (raw.price) applyPriceTick(raw.price);
+          if (raw.price) queuePriceTick(raw.price);
         } else if (raw.type === 'ticker' || raw.type === 'trade') {
-          applyPriceTick(raw.price);
+          queuePriceTick(raw.price);
         }
       }
     } catch (e) {
@@ -1849,12 +1884,16 @@ function startWebSocket() {
   };
 }
 
-// Fallback Heartbeat Ticker
+// Fallback Heartbeat Ticker (Runs only when WebSocket is silent or disconnected)
 function startTickerHeartbeat() {
   if (state.tickerPollInterval) clearInterval(state.tickerPollInterval);
 
   state.tickerPollInterval = setInterval(async () => {
-    if (Date.now() - state.lastTickTime > 1500) {
+    // Jangan poll jika WebSocket aktif & masih menerima tick segar (< 3.5s)
+    if (state.ws && state.ws.readyState === WebSocket.OPEN && (Date.now() - state.lastTickTime < 3500)) {
+      return;
+    }
+    if (Date.now() - state.lastTickTime > 3000) {
       const pollSymbol = state.symbol;
       try {
         const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
@@ -1864,16 +1903,11 @@ function startTickerHeartbeat() {
           const resp = await fetch(`/api/ticker?symbol=${pollSymbol}`);
           if (resp.ok) {
             const d = await resp.json();
-            if (pollSymbol === state.symbol && d.price && d.price > 0) applyPriceTick(d.price);
+            if (pollSymbol === state.symbol && d.price && d.price > 0) queuePriceTick(d.price);
           }
         } else {
-          if (pollSymbol === 'XAUUSD') {
-            const tvPrice = await syncTradingViewOandaPrice();
-            if (pollSymbol === state.symbol && tvPrice && tvPrice > 2000) {
-              applyPriceTick(tvPrice);
-              return;
-            }
-          }
+          // Selalu gunakan ticker API yang konsisten dengan offset chart
+          // (JANGAN inject raw TV scanner karena tidak memiliki offset kline)
           const binanceSym = PAIR_MAP[pollSymbol] || 'PAXGUSDT';
           const resp = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSym}`);
           if (resp.ok) {
@@ -1883,12 +1917,12 @@ function startTickerHeartbeat() {
             const digits = isForex ? 4 : 2;
             const offset = state.symbol === 'XAUUSD' ? state.offset : 0.0;
             const price = Math.round((parseFloat(d.price) + offset) * (10 ** digits)) / (10 ** digits);
-            applyPriceTick(price);
+            queuePriceTick(price);
           }
         }
       } catch (e) {}
     }
-  }, 1200);
+  }, 2000);
 }
 
 // Countdown Timer for Bar Close
